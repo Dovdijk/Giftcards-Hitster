@@ -84,6 +84,8 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
   if (gameSong) lastPlayed.current = gameSong;
   const nowPlaying = music ?? gameSong ?? (['scoreboard', 'stageEnd', 'finished'].includes(s.phase) ? lastPlayed.current : null);
   const isMusic = !!music && nowPlaying === music;
+  // blind mode: the host plays along, so the song stays hidden until the reveal
+  const hidden = s.settings.blind && !isMusic && !['reveal', 'scoreboard', 'stageEnd', 'awards', 'finished'].includes(s.phase);
 
   const player = useRef<PlayerHandle>(null);
   const startedFor = useRef<string | null>(null);
@@ -168,7 +170,8 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
 
         <div className="panel stack" style={{ display: nowPlaying ? 'grid' : 'none' }}>
           <div className="muted" style={{ fontSize: 13, fontWeight: 700 }}>{isMusic ? `SCOREBOARD MUSIC · from ${fmtTime(music!.startAt)}` : 'NOW PLAYING (only you see this)'}</div>
-          {nowPlaying && (
+          {nowPlaying && hidden && <div style={{ fontWeight: 800 }}>🙈 Hidden (blind mode)</div>}
+          {nowPlaying && !hidden && (
             <div className="row">
               {nowPlaying.coverUrl && <img src={nowPlaying.coverUrl} alt="" style={{ width: 56, height: 56, borderRadius: 8 }} />}
               <div style={{ minWidth: 0 }}>
@@ -178,8 +181,16 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
             </div>
           )}
         </div>
-        <div style={{ display: nowPlaying?.spotifyId ? 'block' : 'none' }}>
+        <div style={{ display: nowPlaying?.spotifyId ? 'block' : 'none', position: 'relative' }}>
           <SpotifyPlayer ref={player} trackId={nowPlaying?.spotifyId ?? null} startAt={isMusic ? music!.startAt : 0} autoplay={isMusic} onPlayback={onPlayback} />
+          {hidden && (
+            // covers cover art, title and artist; the play button on the right stays clickable
+            <div style={{ position: 'absolute', left: 0, top: 0, height: 152, right: 64, borderRadius: '12px 0 0 12px', background: 'linear-gradient(90deg, #1b1170 85%, rgba(27,17,112,0.85))', display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 14, textAlign: 'center', padding: 12 }}>
+              🙈 Song hidden
+              <br />
+              <span className="muted" style={{ fontWeight: 500 }}>Press ▶ on the right →</span>
+            </div>
+          )}
           {preview && (
             <div className="panel stack" style={{ marginTop: 8, padding: 14, gap: 6, border: '2px solid var(--yellow)', fontSize: 14 }}>
               <b style={{ color: 'var(--yellow)' }}>Spotify plays a 30 sec preview</b>
@@ -192,7 +203,7 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
           {isMusic && <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Not playing? Press play in the player once; the browser sometimes blocks autoplay.</div>}
         </div>
         {nowPlaying && !nowPlaying.spotifyId && !isMusic && <div className="panel muted" style={{ padding: 14 }}>No Spotify link for this song. Play it manually, then press “Start timer only”.</div>}
-        {s.phase === 'ready' && <NextSongPicker s={s} act={act} />}
+        {s.phase === 'ready' && !s.settings.blind && <NextSongPicker s={s} act={act} />}
       </div>
 
       <div className="stack">
@@ -257,6 +268,8 @@ function JudgeTable({ s, act }: { s: AdminState; act: (t: string, e?: Record<str
   const song = r.song;
   const judging = s.phase === 'reveal' || s.phase === 'answers';
   const players = s.teams.filter((t) => r.participants.includes(t.id));
+  // blind mode: nothing that gives the answer away before the reveal
+  const secret = s.settings.blind && s.phase !== 'reveal';
   const Toggle = ({ teamId, field, value }: { teamId: string; field: 'artist' | 'title'; value: boolean | null | undefined }) => (
     <div className="row" style={{ gap: 4 }}>
       <button className={`btn small ${value === true ? 'mint' : 'secondary'}`} disabled={!judging} onClick={() => act('judge', { teamId, field, value: value === true ? null : true })}>✓</button>
@@ -267,7 +280,8 @@ function JudgeTable({ s, act }: { s: AdminState; act: (t: string, e?: Record<str
     <div className="panel">
       <div className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}>
         <div style={{ fontWeight: 800 }}>Answers {s.phase === 'playing' && <span className="muted">(live)</span>}</div>
-        {song && <div className="muted">Correct: <b style={{ color: '#fff' }}>{song.artist}</b> – <b style={{ color: '#fff' }}>{song.title}</b> ({song.year})</div>}
+        {secret && <div className="muted">🙈 Blind mode: answers and the correct song show at the reveal</div>}
+        {song && !secret && <div className="muted">Correct: <b style={{ color: '#fff' }}>{song.artist}</b> – <b style={{ color: '#fff' }}>{song.title}</b> ({song.year})</div>}
       </div>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
@@ -298,9 +312,9 @@ function JudgeTable({ s, act }: { s: AdminState; act: (t: string, e?: Record<str
                     <b>{a?.yearGuess ?? '–'}{song?.year && a?.yearGuess ? <span className="muted"> ({Math.abs(a.yearGuess - song.year)} off)</span> : null}</b>
                   ) : (
                     <div className="row" style={{ gap: 6 }}>
-                      <b>{placement(r.timelineYears?.[t.id], a?.position)}</b>
-                      {r.speedWinnerId === t.id && <span className="pill warn" title="First team to lock in the right spot">⚡ +{s.settings.speedBonus} · {((r.speedMs ?? 0) / 1000).toFixed(1)}s</span>}
-                      {judging && (
+                      <b>{secret ? (a ? '🙈' : '–') : placement(r.timelineYears?.[t.id], a?.position)}</b>
+                      {!secret && r.speedWinnerId === t.id && <span className="pill warn" title="First team to lock in the right spot">⚡ +{s.settings.speedBonus} · {((r.speedMs ?? 0) / 1000).toFixed(1)}s</span>}
+                      {judging && !secret && (
                         <button className={`btn small ${ok ? 'mint' : 'danger'}`} title="Click to override" onClick={() => act('placement', { teamId: t.id, value: !ok })}>
                           {ok ? '✓' : '✗'}
                         </button>
@@ -308,10 +322,10 @@ function JudgeTable({ s, act }: { s: AdminState; act: (t: string, e?: Record<str
                     </div>
                   )}
                 </td>
-                <td style={{ maxWidth: 200 }}>{a?.artist || <span className="muted">–</span>}</td>
-                <td><Toggle teamId={t.id} field="artist" value={j?.artist} /></td>
-                <td style={{ maxWidth: 200 }}>{a?.title || <span className="muted">–</span>}</td>
-                <td><Toggle teamId={t.id} field="title" value={j?.title} /></td>
+                <td style={{ maxWidth: 200 }}>{secret ? (a?.artist ? '🙈' : '–') : a?.artist || <span className="muted">–</span>}</td>
+                <td>{!secret && <Toggle teamId={t.id} field="artist" value={j?.artist} />}</td>
+                <td style={{ maxWidth: 200 }}>{secret ? (a?.title ? '🙈' : '–') : a?.title || <span className="muted">–</span>}</td>
+                <td>{!secret && <Toggle teamId={t.id} field="title" value={j?.title} />}</td>
               </tr>
             );
           })}
@@ -376,7 +390,10 @@ function Songs({ s, act, socket, show }: { s: AdminState; act: Act; socket: Reac
     { id: MUSIC_LIST, label: '🎵 Scoreboard music', n: count(MUSIC_LIST) },
   ];
 
+  const blind = s.settings.blind;
   return (
+    <div className="stack">
+    <BlindSetup s={s} act={act} socket={socket} show={show} />
     <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 20, alignItems: 'start' }}>
       <div className="panel stack" style={{ gap: 6, position: 'sticky', top: 20 }}>
         <div className="muted" style={{ fontSize: 13, fontWeight: 700 }}>SONG LISTS</div>
@@ -465,14 +482,116 @@ function Songs({ s, act, socket, show }: { s: AdminState; act: Act; socket: Reac
               Songs play top to bottom. Spotify sometimes shows the remaster year; MusicBrainz usually has the original. Edit the year if needed.
             </div>
           )}
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <tbody>
-              {songs.map((x, i) => <SongRow key={x.id} song={x} act={act} index={i} s={s} />)}
-            </tbody>
-          </table>
+          {blind && !isMusic ? (
+            <div className="stack" style={{ gap: 6 }}>
+              {songs.map((x, i) => (
+                <div key={x.id} className="row" style={{ borderTop: '1px solid var(--line)', padding: '6px 0', opacity: x.used ? 0.45 : 1 }}>
+                  <span className="muted" style={{ width: 30 }}>{i + 1}</span>
+                  <div style={{ width: 44, height: 44, borderRadius: 6, background: 'var(--card-strong)', display: 'grid', placeItems: 'center' }}>🙈</div>
+                  <span className="grow muted">Hidden song</span>
+                  {x.used && <span className="pill">played</span>}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <tbody>
+                {songs.map((x, i) => <SongRow key={x.id} song={x} act={act} index={i} s={s} />)}
+              </tbody>
+            </table>
+          )}
           {!songs.length && <div className="muted" style={{ padding: 20, textAlign: 'center' }}>No songs in this list yet.</div>}
         </div>
       </div>
+    </div>
+    </div>
+  );
+}
+
+function BlindSetup({ s, act, socket, show }: { s: AdminState; act: Act; socket: React.RefObject<any>; show: (m: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [f, setF] = useState({ rounds: 6, perRound: 15, practice: 1, bonus: 3 });
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  useEffect(() => {
+    const sock = socket.current;
+    if (!sock) return;
+    const p = (x: { done: number; total: number } | null) => setProgress(x);
+    const d = (x: { done: number; total: number; skipped: number }) =>
+      show(x.done >= x.total ? `Ready! ${x.done} hidden songs spread over the rounds.` : `Only ${x.done} of ${x.total} songs could be used. Paste a bigger playlist and run it again.`);
+    sock.on('importProgress', p);
+    sock.on('blindDone', d);
+    return () => {
+      sock.off('importProgress', p);
+      sock.off('blindDone', d);
+    };
+  }, [socket, show]);
+  const need = f.rounds * f.perRound + f.practice + f.bonus;
+  const found = (text.match(/track[/:][A-Za-z0-9]{22}/g) ?? []).length;
+  const num = (k: keyof typeof f, label: string, max: number) => (
+    <label className="field" style={{ width: 120 }}>
+      {label}
+      <input className="input" inputMode="numeric" value={String(f[k])} onChange={(e) => setF({ ...f, [k]: Math.min(max, Number(e.target.value.replace(/\D/g, '')) || 0) })} />
+    </label>
+  );
+
+  if (s.settings.blind) {
+    return (
+      <div className="panel row wrap" style={{ justifyContent: 'space-between', border: '2px solid var(--yellow)' }}>
+        <div>
+          <b>🙈 Blind mode is on</b>
+          <div className="muted" style={{ fontSize: 14 }}>Titles, artists and years are hidden in the host panel until each reveal, so you can play along.</div>
+        </div>
+        <div className="row">
+          {progress && <span className="pill warn">Picking songs {progress.done}/{progress.total}…</span>}
+          <button className="btn small ghost" onClick={() => confirm('Show all songs? You will see the answers.') && act('settings', { patch: { blind: false } })}>Show songs (spoilers!)</button>
+        </div>
+      </div>
+    );
+  }
+  if (s.phase !== 'lobby') return null;
+  return (
+    <div className="panel stack">
+      <div className="row" style={{ justifyContent: 'space-between' }}>
+        <div>
+          <b>🙈 Blind setup: play along without knowing the songs</b>
+          <div className="muted" style={{ fontSize: 14 }}>Paste a big playlist; the app picks random songs, spreads them over the rounds and hides them from you.</div>
+        </div>
+        <button className="btn small secondary" onClick={() => setOpen((v) => !v)}>{open ? 'Close' : 'Set up'}</button>
+      </div>
+      {open && (
+        <>
+          <div className="muted" style={{ fontSize: 14 }}>
+            Tip: pick a large playlist (e.g. a top 2000 or a Hitster playlist), open it in the Spotify desktop app, click one song, press Ctrl+A and Ctrl+C without reading along, and paste here. The more songs, the bigger the surprise.
+          </div>
+          <textarea className="input" rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="Paste Spotify track links here" style={{ color: 'transparent', textShadow: '0 0 8px rgba(255,255,255,0.5)' }} />
+          <div className="row wrap" style={{ alignItems: 'flex-end' }}>
+            {num('rounds', 'Rounds', 12)}
+            {num('perRound', 'Songs per round', 40)}
+            {num('practice', 'Practice songs', 2)}
+            {num('bonus', 'Bonus songs', 5)}
+            <div className="grow" />
+            <div className="muted" style={{ fontSize: 13, textAlign: 'right' }}>
+              Needs {need} songs · pasted {found}
+              <br />
+              Takes about {Math.ceil((need * 2) / 60)} min
+            </div>
+            <button
+              className="btn"
+              disabled={found < need || !!progress}
+              onClick={async () => {
+                const r = await act('blindSetup', { text, ...f });
+                if (r.ok) {
+                  setText('');
+                  setOpen(false);
+                }
+              }}
+            >
+              Pick songs blind
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -668,6 +787,10 @@ function SettingsTab({ s, act }: { s: AdminState; act: Act }) {
         {field('targetCards', 'Cards to win a round', 'Including the start card(s).')}
         {field('winBonus', 'Points for winning a round', 'Artist and title are worth 100 points each.')}
         {field('speedBonus', 'Speed bonus', 'For the first team that locks in the right spot. 0 turns it off.')}
+        <label className="row" style={{ gap: 10, cursor: 'pointer' }}>
+          <input type="checkbox" checked={!!v.blind} onChange={(e) => setV({ ...v, blind: e.target.checked })} />
+          <span><b>Blind mode</b> <span className="muted">· hide songs in the host panel so you can play along</span></span>
+        </label>
         {field('answersSeconds', 'Seconds to show answers', 'Before the correct answer appears.')}
         <button className="btn">Save settings</button>
       </form>

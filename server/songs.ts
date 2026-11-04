@@ -151,6 +151,14 @@ export async function musicbrainzYear(title: string, artist: string): Promise<nu
 export type NewSong = Omit<Song, 'id' | 'used'>;
 
 export async function resolveSpotifyTrack(trackId: string): Promise<NewSong> {
+  // offline testing: HITSTER_FAKE_LOOKUP=1 returns made-up songs instead of calling Spotify/MusicBrainz
+  if (process.env.HITSTER_FAKE_LOOKUP === '1') {
+    const n = [...trackId].reduce((a, c) => a + c.charCodeAt(0), 0);
+    return {
+      spotifyId: trackId, spotifyUrl: `https://open.spotify.com/track/${trackId}`, title: `Test song ${trackId.slice(0, 4)}`, artist: `Artist ${n % 50}`,
+      coverUrl: null, year: 1960 + (n % 64), spotifyYear: null, musicbrainzYear: null, needsCheck: false, list: '', startAt: 0,
+    };
+  }
   const info = await spotifyInfo(trackId);
   const mb = info ? await musicbrainzYear(info.title, info.artist) : null;
   const sy = info?.year ?? null;

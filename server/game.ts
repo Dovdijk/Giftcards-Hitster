@@ -51,7 +51,7 @@ export function freshStage(n: number, startYears = [1987]): Stage {
 export function freshData(): GameData {
   return {
     phase: 'lobby',
-    settings: { roundSeconds: 60, targetCards: 10, answersSeconds: 6, winBonus: 1000, speedBonus: 50, joinOpen: true },
+    settings: { roundSeconds: 60, targetCards: 10, answersSeconds: 6, winBonus: 1000, speedBonus: 50, blind: false, joinOpen: true },
     stages: [freshStage(1)],
     currentStage: 0,
     songs: [],
@@ -259,6 +259,7 @@ export class Game extends EventEmitter {
     if (patch.winBonus !== undefined) s.winBonus = clampInt(patch.winBonus, 0, 100000);
     if (patch.speedBonus !== undefined) s.speedBonus = clampInt(patch.speedBonus, 0, 10000);
     if (patch.joinOpen !== undefined) s.joinOpen = !!patch.joinOpen;
+    if (patch.blind !== undefined) s.blind = !!patch.blind;
     this.changed();
   }
 

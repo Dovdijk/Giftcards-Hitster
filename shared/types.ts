@@ -98,6 +98,7 @@ export interface Settings {
   answersSeconds: number; // how long team answers are shown before the reveal
   winBonus: number; // points for winning a round
   speedBonus: number; // points for the first team to lock in the right spot (0 = off)
+  blind: boolean; // host panel hides titles/artists/years so the host can play along
   joinOpen: boolean;
 }
 

@@ -297,6 +297,7 @@ async function main() {
     const game = entry.game;
     socket.on('admin', (action: { type: string; [k: string]: any }, ack) => {
       if (action?.type === 'importSongs') return importSongs(entry, String(action.text ?? ''), String(action.list ?? ''), ack);
+      if (action?.type === 'blindSetup') return blindSetup(entry, action, ack);
       reply(ack, () => {
         const a = action ?? { type: '' };
         switch (a.type) {
@@ -401,6 +402,67 @@ async function main() {
     } finally {
       importing.delete(id);
       io.to(`g:${id}:admin`).emit('importProgress', null);
+    }
+  }
+
+  /**
+   * Blind setup: pick random songs from a big pasted playlist and spread them over the rounds,
+   * so the host can play along without knowing the answers.
+   */
+  async function blindSetup(entry: Entry, a: Record<string, any>, ack: unknown) {
+    const cb = typeof ack === 'function' ? (ack as (r: unknown) => void) : () => {};
+    const id = entry.meta.id;
+    const game = entry.game;
+    if (importing.has(id)) return cb({ ok: false, error: 'An import is already running' });
+    if (game.data.phase !== 'lobby') return cb({ ok: false, error: 'Blind setup is only possible before the show starts' });
+    const rounds = Math.min(12, Math.max(1, Math.round(Number(a.rounds) || 0)));
+    const perRound = Math.min(40, Math.max(1, Math.round(Number(a.perRound) || 0)));
+    const practice = Math.min(2, Math.max(0, Math.round(Number(a.practice) || 0)));
+    const bonus = Math.min(5, Math.max(0, Math.round(Number(a.bonus) || 0)));
+    const existing = new Set(game.data.songs.map((s) => s.spotifyId));
+    const pool = extractSpotifyTrackIds(String(a.text ?? '')).filter((x) => !existing.has(x));
+    const need = rounds * perRound + practice + bonus;
+    if (pool.length < need) return cb({ ok: false, error: `Paste at least ${need} songs (found ${pool.length} new Spotify links). A bigger playlist also keeps more surprise.` });
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    try {
+      while (game.data.stages.length < rounds) game.addStage();
+    } catch (e) {
+      return cb({ ok: false, error: e instanceof GameError ? e.message : 'Could not add rounds' });
+    }
+    game.updateSettings({ blind: true });
+    const stageIds = game.data.stages.slice(0, rounds).map((s) => s.id);
+    // which list gets the next song: practice first, then bonus, then the rounds in turn
+    const slots: string[] = [
+      ...Array(practice).fill('practice'),
+      ...Array(bonus).fill('bonus'),
+      ...Array.from({ length: rounds * perRound }, (_, i) => stageIds[i % rounds]),
+    ];
+    cb({ ok: true, result: { queued: need } });
+    importing.add(id);
+    let done = 0;
+    let skipped = 0;
+    try {
+      for (const trackId of pool) {
+        if (done >= slots.length || !registry.byId(id)) break;
+        const song = await resolveSpotifyTrack(trackId);
+        // without a year we can't use it (and the host shouldn't look it up): take another one
+        if (song.year === null || song.title === '(unknown title)') {
+          skipped++;
+          continue;
+        }
+        const list = slots[done];
+        if (!['practice', 'bonus'].includes(list) && !game.data.stages.some((s) => s.id === list)) break;
+        game.addSongs([{ ...song, list, needsCheck: false }]);
+        done++;
+        io.to(`g:${id}:admin`).emit('importProgress', { done, total: slots.length });
+      }
+    } finally {
+      importing.delete(id);
+      io.to(`g:${id}:admin`).emit('importProgress', null);
+      io.to(`g:${id}:admin`).emit('blindDone', { done, total: slots.length, skipped });
     }
   }
 
