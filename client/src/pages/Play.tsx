@@ -5,6 +5,7 @@ import type { PlayerState, TimelineCard } from '../../../shared/types';
 import { useCountdown, useGameSocket } from '../socket';
 import { Avatar, Offline, Ring, Vinyl, Wordmark, useToast } from '../components/common';
 import { GiftCard, Medals, Shapes, TeamCard, TimelineRow, songCardIndexes } from '../components/giftcard';
+import { Burst, vibrate } from '../components/fx';
 
 const tokenKey = (code: string) => `hitster-token-${code}`;
 
@@ -333,6 +334,14 @@ function AnswerForm({ state, emit, serverNow, toast }: { state: PlayerState; emi
   const [dragging, setDragging] = useState(false);
   const locked = !!state.myAnswer?.confirmed;
   const left = useCountdown(r.endsAt, serverNow) ?? 0;
+  useEffect(() => {
+    if (!locked && left > 0 && left <= 3) vibrate(40);
+  }, [left, locked]);
+  const countdown = !locked && left > 0 && left <= 3 && (
+    <div key={left} style={{ position: 'fixed', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none', zIndex: 60 }}>
+      <div className="count-num"><GiftCard year={left} color={3 - left} width={260} style={{ boxShadow: '0 30px 80px rgba(0,0,0,0.6)' }} /></div>
+    </div>
+  );
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const timeline: TimelineCard[] = me.timeline;
 
@@ -360,13 +369,14 @@ function AnswerForm({ state, emit, serverNow, toast }: { state: PlayerState; emi
     if (draftTimer.current) clearTimeout(draftTimer.current);
     const res = await emit('answer', { answer: current(), confirm: true });
     if (!res.ok) toast(res.error);
+    else vibrate(60);
   }
 
   if (locked) {
     const a = state.myAnswer!;
     return (
       <div className="stack">
-        <div className="panel center" style={{ padding: 22 }}>
+        <div className="panel center pop" style={{ padding: 22 }}>
           <Ring seconds={left} total={state.settings.roundSeconds} size={90} />
           <div style={{ fontWeight: 800, fontSize: 22, marginTop: 10 }}>Locked in! 🔒</div>
           <div className="muted" style={{ marginTop: 6 }}>
@@ -443,6 +453,7 @@ function AnswerForm({ state, emit, serverNow, toast }: { state: PlayerState; emi
         </label>
       </div>
 
+      {countdown}
       <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, padding: 16, background: 'linear-gradient(transparent, var(--navy) 35%)' }}>
         <div style={{ maxWidth: 520, margin: '0 auto' }}>
           <button className="btn mint big" style={{ width: '100%' }} disabled={bonus ? yearGuess.length !== 4 : position === null} onClick={confirm}>
@@ -466,13 +477,20 @@ function MyResult({ state }: { state: PlayerState }) {
   const r = state.round!;
   const me = state.me!;
   const song = r.song;
-  if (!r.participants.includes(me.id) || !song) return <Notice title="Answer revealed" text="Check the big screen!" />;
-  const j = r.judgments?.[me.id];
+  const playedThis = r.participants.includes(me.id) && !!song;
   const placed = r.placementCorrect?.[me.id];
+  const good = r.kind === 'normal' ? !!placed : false;
+  useEffect(() => {
+    if (playedThis && r.kind === 'normal') vibrate(good ? [70, 60, 140] : 350);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  if (!playedThis || !song) return <Notice title="Answer revealed" text="Check the big screen!" />;
+  const j = r.judgments?.[me.id];
   const a = r.answers?.[me.id];
-  const mark = (v: boolean | null | undefined) => (v === true ? <span className="pill ok">+100</span> : v === false ? <span className="pill bad">✗</span> : <span className="pill">judging…</span>);
+  const mark = (v: boolean | null | undefined) => (v === true ? <span className="pill ok pop">+100</span> : v === false ? <span className="pill bad">✗</span> : <span className="pill">judging…</span>);
   return (
-    <div className="panel stack fadeup">
+    <div className={`panel stack ${r.kind === 'normal' && !good ? 'anim-shake' : 'fadeup'}`}>
+      {good && <Burst />}
       <div className="row">
         <GiftCard year={song.year} cover={song.coverUrl} width={130} className="pop" />
         <div>
@@ -499,9 +517,13 @@ function MyResult({ state }: { state: PlayerState }) {
 function StageWon({ state }: { state: PlayerState }) {
   const winner = state.teams.find((t) => t.id === state.outcome?.winnerId);
   const mine = winner?.id === state.me?.id;
+  useEffect(() => {
+    if (mine) vibrate([120, 80, 120, 80, 400]);
+  }, [mine]);
   return (
     <div className="panel center stack pop" style={{ padding: 28 }}>
-      <Medals wins={[state.stage.index + 1]} size={84} />
+      {mine && <Burst />}
+      <div className="medal-drop"><Medals wins={[state.stage.index + 1]} size={84} /></div>
       <div style={{ fontWeight: 800, fontSize: 24 }}>{mine ? `You won ${state.stage.name}!` : `${winner?.name ?? 'Someone'} wins ${state.stage.name}`}</div>
       <div className="muted">{mine ? `+${state.settings.winBonus} points for your team.` : state.outcome?.message}</div>
     </div>
@@ -515,6 +537,7 @@ function Finished({ state }: { state: PlayerState }) {
   const mine = winner?.id === state.me?.id;
   return (
     <div className="panel center stack pop" style={{ padding: 28 }}>
+      {mine && <Burst />}
       <div style={{ fontSize: 56 }}>{mine ? '🏆' : '🎉'}</div>
       <div style={{ fontWeight: 800, fontSize: 26 }}>{mine ? 'You won the night!' : `${winner?.name ?? 'Someone'} wins the night!`}</div>
       <div className="muted">You finished #{myRank} with {state.me?.points ?? 0} points.</div>

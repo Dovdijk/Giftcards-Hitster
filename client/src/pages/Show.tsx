@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import type { PublicState, TeamPublic, TimelineCard } from '../../../shared/types';
@@ -6,6 +6,7 @@ import { useCountdown, useGameSocket } from '../socket';
 import { Avatar, Ring, Vinyl, Wordmark } from '../components/common';
 import { GiftCard, Medals, Shapes, TeamCard, songCardIndexes } from '../components/giftcard';
 import Intro from '../components/Intro';
+import { CardRain, CountUp, FloatingCards, Sparkles, useSweep } from '../components/fx';
 
 /** Fixed 1920x1080 stage, scaled to whatever screen it's on. */
 function Stage({ children }: { children: React.ReactNode }) {
@@ -43,8 +44,14 @@ export default function Show() {
       )}
       {!g.connected && <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 9 }} className="pill bad">offline</div>}
       {s && <Screen s={s} serverNow={g.serverNow} />}
+      {s && <Transition phase={s.phase} />}
     </Stage>
   );
+}
+
+function Transition({ phase }: { phase: string }) {
+  // ready and playing share one screen: no sweep when the music starts
+  return useSweep(phase === 'playing' ? 'ready' : phase);
 }
 
 function TopBar({ s, title }: { s: PublicState; title?: React.ReactNode }) {
@@ -87,6 +94,7 @@ function Lobby({ s }: { s: PublicState }) {
   }, [url]);
   return (
     <>
+      <FloatingCards count={10} seed={8} />
       <TopBar s={s} />
       <div style={{ position: 'absolute', top: 170, left: 64, width: 760 }}>
         <div style={{ fontSize: 120, fontWeight: 800, lineHeight: 0.95, letterSpacing: '-0.03em' }}>
@@ -130,9 +138,14 @@ function Playing({ s, serverNow }: { s: PublicState; serverNow: () => number }) 
       <div style={{ position: 'absolute', top: 150, left: 0, right: 0, display: 'grid', placeItems: 'center' }}>
         <div style={{ position: 'relative' }}>
           <Vinyl size={600} spinning={playing} label={playing ? '♪' : '?'} />
-          {playing && left !== null && (
-            <div style={{ position: 'absolute', right: -220, top: 200 }}>
+          {playing && left !== null && left > 3 && (
+            <div style={{ position: 'absolute', right: -220, top: 200 }} className={left <= 10 ? 'anim-bump' : undefined} key={left <= 10 ? left : 'ring'}>
               <Ring seconds={left} total={s.settings.roundSeconds} size={200} />
+            </div>
+          )}
+          {playing && left !== null && left <= 3 && left > 0 && (
+            <div key={left} className="count-num" style={{ position: 'absolute', left: '50%', top: '50%', marginLeft: -300, marginTop: -190, zIndex: 5 }}>
+              <GiftCard year={left} color={3 - left} width={600} style={{ fontSize: 40, boxShadow: '0 40px 100px rgba(0,0,0,0.6)' }} />
             </div>
           )}
         </div>
@@ -145,7 +158,7 @@ function Playing({ s, serverNow }: { s: PublicState; serverNow: () => number }) 
           const locked = r.confirmedTeamIds.includes(t.id);
           const typing = !locked && r.answeredTeamIds.includes(t.id);
           return (
-            <div key={t.id} style={{ position: 'relative', opacity: locked ? 1 : 0.55, transition: 'opacity 0.3s' }} title={t.name}>
+            <div key={t.id + (locked ? '-locked' : '')} className={locked ? 'anim-bump' : undefined} style={{ position: 'relative', opacity: locked ? 1 : 0.55, transition: 'opacity 0.3s' }} title={t.name}>
               <Avatar team={t} size={72} ring={locked ? 'var(--mint)' : typing ? 'var(--yellow)' : 'rgba(255,255,255,0.25)'} />
               {locked && <div style={{ position: 'absolute', right: -4, bottom: -4, fontSize: 24 }}>🔒</div>}
             </div>
@@ -163,7 +176,7 @@ function placement(years: number[] | undefined, p: number | null | undefined) {
   return `${years[p - 1]} – ${years[p]}`;
 }
 
-function TeamAnswerCard({ s, t, showResult, compact }: { s: PublicState; t: TeamPublic; showResult: boolean; compact: boolean }) {
+function TeamAnswerCard({ s, t, showResult, compact, i }: { s: PublicState; t: TeamPublic; showResult: boolean; compact: boolean; i: number }) {
   const r = s.round!;
   const a = r.answers?.[t.id];
   const j = r.judgments?.[t.id];
@@ -178,7 +191,10 @@ function TeamAnswerCard({ s, t, showResult, compact }: { s: PublicState; t: Team
     </div>
   );
   return (
-    <div className="panel fadeup" style={{ padding: compact ? 10 : 14, border: `2px solid ${border}`, display: 'grid', gap: compact ? 4 : 8, minWidth: 0 }}>
+    <div
+      className={`panel ${showResult && r.kind === 'normal' ? (ok ? 'anim-bump' : 'anim-shake') : 'fadeup'}`}
+      style={{ padding: compact ? 10 : 14, border: `2px solid ${border}`, display: 'grid', gap: compact ? 4 : 8, minWidth: 0, animationDelay: showResult ? `${1.5 + i * 0.07}s` : `${i * 0.05}s`, boxShadow: showResult && ok && r.kind === 'normal' ? '0 0 30px rgba(62,224,161,0.25)' : undefined }}
+    >
       <div className="row" style={{ gap: 10, minWidth: 0 }}>
         <Avatar team={t} size={compact ? 36 : 54} />
         <div style={{ fontWeight: 800, fontSize: compact ? 18 : 21, ...ell }}>{t.name}</div>
@@ -206,7 +222,7 @@ function AnswerGrid({ s, showResult, top }: { s: PublicState; showResult: boolea
   return (
     <div style={{ position: 'absolute', top, left: 64, right: 64, bottom: 40 }}>
       <div style={{ zoom, width: STAGE_W / zoom, display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: 16, alignContent: 'start' }}>
-        {players.map((t) => <TeamAnswerCard key={t.id} s={s} t={t} showResult={showResult} compact={showResult ? n > 10 : n > 15} />)}
+        {players.map((t, i) => <TeamAnswerCard key={t.id} i={i} s={s} t={t} showResult={showResult} compact={showResult ? n > 10 : n > 15} />)}
       </div>
     </div>
   );
@@ -226,12 +242,18 @@ function Reveal({ s }: { s: PublicState }) {
   return (
     <>
       <TopBar s={s} />
-      <div className="row pop" style={{ position: 'absolute', top: 110, left: 64, right: 64, gap: 40, height: 260 }}>
-        <GiftCard year={song.year} cover={song.coverUrl} width={410} style={{ transform: 'rotate(-4deg)', fontSize: 22 }} />
+      <div className="row" style={{ position: 'absolute', top: 110, left: 64, right: 64, gap: 40, height: 260 }}>
+        <div className="flip" style={{ position: 'relative', transform: 'rotate(-4deg)', flex: 'none' }}>
+          <div className="flip-inner">
+            <div className="face back"><GiftCard mystery width={410} style={{ fontSize: 22 }} /></div>
+            <div className="face"><GiftCard year={song.year} cover={song.coverUrl} color={4} width={410} style={{ fontSize: 22 }} /></div>
+          </div>
+          <Sparkles radius={300} />
+        </div>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 34, fontWeight: 700, color: 'var(--rose)' }}>The answer is…</div>
-          <div style={{ fontSize: 76, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05, marginTop: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{song.title}</div>
-          <div style={{ fontSize: 44, fontWeight: 600 }}>{song.artist} <span style={{ color: 'var(--yellow)' }}>· {song.year}</span></div>
+          <div className="fadeup" style={{ fontSize: 34, fontWeight: 700, color: 'var(--rose)' }}>The answer is…</div>
+          <div className="fadeup" style={{ animationDelay: '1.1s', fontSize: 76, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05, marginTop: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{song.title}</div>
+          <div className="fadeup" style={{ animationDelay: '1.3s', fontSize: 44, fontWeight: 600 }}>{song.artist} <span style={{ color: 'var(--yellow)' }}>· {song.year}</span></div>
         </div>
       </div>
       <AnswerGrid s={s} showResult top={410} />
@@ -239,30 +261,63 @@ function Reveal({ s }: { s: PublicState }) {
   );
 }
 
-function Track({ team, target, cardW, highlight, captions }: { team: TeamPublic; target: number; cardW: number; highlight?: (c: TimelineCard) => boolean; captions?: boolean }) {
+function Track({ team, target, cardW, highlight, captions, delay = 0 }: { team: TeamPublic; target: number; cardW: number; highlight?: (c: TimelineCard) => boolean; captions?: boolean; delay?: number }) {
   const colors = songCardIndexes(team.timeline);
   const cardH = cardW / 1.586;
   const capH = captions ? Math.round(cardW * 0.34) : 0;
+  const hlIndex = highlight ? team.timeline.findIndex((c) => highlight(c)) : -1;
+  const grid = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const el = grid.current;
+    if (!el || hlIndex < 0) return;
+    const slots = [...el.children] as HTMLElement[];
+    const card = slots[hlIndex]?.firstElementChild as HTMLElement | null;
+    if (!card || !card.animate) return;
+    const rect = card.getBoundingClientRect();
+    const scale = rect.width / card.offsetWidth || 1; // the stage is scaled to the screen
+    const dx = (window.innerWidth / 2 - (rect.left + rect.width / 2)) / scale;
+    const dy = (window.innerHeight / 2 - (rect.top + rect.height / 2)) / scale;
+    const start = 500 + delay;
+    card.animate(
+      [
+        { transform: `translate(${dx}px, ${dy}px) scale(${Math.min(4, 520 / cardW)}) rotate(-8deg)`, opacity: 0 },
+        { transform: `translate(${dx}px, ${dy}px) scale(${Math.min(4, 520 / cardW)}) rotate(-4deg)`, opacity: 1, offset: 0.25 },
+        { transform: 'translate(0, 0) scale(1) rotate(0)', opacity: 1 },
+      ],
+      { duration: 1300, delay: start, easing: 'cubic-bezier(.5,0,.3,1)', fill: 'backwards' },
+    );
+    const slotW = el.offsetWidth / target;
+    for (let k = hlIndex + 1; k < slots.length; k++) {
+      const node = slots[k].firstElementChild as HTMLElement | null;
+      if (!node || k >= team.timeline.length + 1) break;
+      node.animate([{ transform: `translateX(${-slotW}px)` }, { transform: 'translateX(0)' }], { duration: 500, delay: start + 750, easing: 'ease-out', fill: 'backwards' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="grow" style={{ position: 'relative', height: cardH + 10 + capH, minWidth: 0 }}>
       <div style={{ position: 'absolute', left: 0, right: 0, top: cardH / 2 + 5, height: Math.max(5, cardW / 30), transform: 'translateY(-50%)', borderRadius: 5, background: 'linear-gradient(90deg, var(--pink), var(--rose), var(--sky))', opacity: 0.85 }} />
-      <div style={{ position: 'absolute', inset: 0, display: 'grid', gridTemplateColumns: `repeat(${target}, 1fr)`, alignItems: 'start', justifyItems: 'center' }}>
+      <div ref={grid} style={{ position: 'absolute', inset: 0, display: 'grid', gridTemplateColumns: `repeat(${target}, 1fr)`, alignItems: 'start', justifyItems: 'center' }}>
         {Array.from({ length: target }).map((_, k) => {
           const c = team.timeline[k];
           if (!c) {
             const d = Math.max(16, cardW / 9);
-            return <div key={k} style={{ marginTop: cardH / 2 + 5 - d / 2, width: d, height: d, borderRadius: '50%', background: 'var(--navy-2)', border: '3px solid rgba(255,255,255,0.35)' }} />;
+            return <div key={k}><div style={{ marginTop: cardH / 2 + 5 - d / 2, width: d, height: d, borderRadius: '50%', background: 'var(--navy-2)', border: '3px solid rgba(255,255,255,0.35)' }} /></div>;
           }
-          const hl = highlight?.(c);
+          const hl = k === hlIndex;
           return (
-            <div key={k} style={{ display: 'grid', justifyItems: 'center', paddingTop: 5, width: cardW }}>
-              <GiftCard year={c.year} start={c.songId === null} color={colors[k]} width={cardW} glow={hl} className={hl ? 'pop' : undefined} style={{ fontSize: cardW / 8, animationDelay: '0.6s' }} />
-              {captions && (
-                <div style={{ marginTop: 6, width: cardW + 8, textAlign: 'center', fontSize: Math.max(12, cardW * 0.1), lineHeight: 1.2, fontWeight: 700 }}>
-                  <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.songId === null ? 'Start' : c.title}</div>
-                  <div className="muted" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 500 }}>{c.artist ?? ''}</div>
-                </div>
-              )}
+            <div key={k} style={{ display: 'grid', justifyItems: 'center', paddingTop: 5, width: cardW, position: 'relative', zIndex: hl ? 5 : undefined }}>
+              <div style={{ display: 'grid', justifyItems: 'center' }}>
+                <GiftCard year={c.year} start={c.songId === null} color={colors[k]} width={cardW} glow={hl} style={{ fontSize: cardW / 8 }} />
+                {captions && (
+                  <div style={{ marginTop: 6, width: cardW + 8, textAlign: 'center', fontSize: Math.max(12, cardW * 0.1), lineHeight: 1.2, fontWeight: 700 }}>
+                    <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.songId === null ? 'Start' : c.title}</div>
+                    <div className="muted" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 500 }}>{c.artist ?? ''}</div>
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
@@ -274,8 +329,22 @@ function Track({ team, target, cardW, highlight, captions }: { team: TeamPublic;
 const STAGE_W = 1920 - 128; // usable width on the 1920 stage
 const LIST_H = 880; // usable height below the top bar
 
+/** Ranking and points of the previous scoreboard, to animate what changed. */
+let lastBoard: Record<string, { rank: number; points: number }> | null = null;
+
 function Scoreboard({ s }: { s: PublicState }) {
   const ranked = [...s.teams].sort((a, b) => b.timeline.length - a.timeline.length || b.points - a.points);
+  const [prev] = useState(() => lastBoard);
+  const [fresh, setFresh] = useState(true);
+  useEffect(() => {
+    const t = setTimeout(() => setFresh(false), 6000);
+    return () => clearTimeout(t);
+  }, []);
+  useEffect(() => {
+    const snap: Record<string, { rank: number; points: number }> = {};
+    ranked.forEach((t, i) => (snap[t.id] = { rank: i + 1, points: t.points }));
+    lastBoard = snap;
+  });
   const perPage = 10;
   const pages = Math.max(1, Math.ceil(ranked.length / perPage));
   const [page, setPage] = useState(0);
@@ -294,12 +363,23 @@ function Scoreboard({ s }: { s: PublicState }) {
   const rowH = Math.floor((LIST_H - (n - 1) * gap) / n);
   const title = s.pendingBonus.length ? <span style={{ color: 'var(--yellow)' }}>{s.outcome?.message}</span> : <>Score<span className="accent">board</span>{pages > 1 && <span className="muted" style={{ fontSize: 22 }}>  {p + 1}/{pages}</span>}</>;
 
+  const move = (t: TeamPublic, rank: number) => {
+    const before = fresh && prev?.[t.id];
+    if (!before) return { from: 0, delta: 0, points: t.points };
+    const samePage = Math.floor((before.rank - 1) / perPage) === p;
+    return { from: samePage ? (before.rank - rank) * (rowH + gap) : 0, delta: before.rank - rank, points: before.points };
+  };
+  const RankMove = ({ delta, size }: { delta: number; size: number }) =>
+    delta ? <span className={`rank-move ${delta > 0 ? 'up' : 'down'}`} style={{ fontSize: size, marginLeft: size * 0.5 }}>{delta > 0 ? `▲${delta}` : `▼${-delta}`}</span> : null;
   const box = (t: TeamPublic, rank: number, i: number, extra: React.CSSProperties) => ({
     key: t.id,
-    className: 'fadeup',
+    className: prev && fresh ? 'rank-slide' : 'fadeup',
     style: {
+      ['--from' as any]: `${move(t, rank).from}px`,
+      position: 'relative',
+      zIndex: move(t, rank).delta > 0 ? 2 : 1,
       borderRadius: 26,
-      animationDelay: `${i * 60}ms`,
+      animationDelay: prev && fresh ? undefined : `${i * 60}ms`,
       background: rank === 1 ? 'rgba(255,214,107,0.12)' : 'rgba(255,255,255,0.06)',
       border: s.pendingBonus.includes(t.id) ? '3px solid var(--yellow)' : '1px solid var(--line)',
       ...extra,
@@ -314,6 +394,7 @@ function Scoreboard({ s }: { s: PublicState }) {
     const cardW = Math.floor(Math.min((STAGE_W - pad * 2) / target - 18, ((rowH - headerH - pad * 2 - 20) / (1 / 1.586 + 0.34))));
     return (
       <>
+        <FloatingCards />
         <TopBar s={s} title={title} />
         <div style={{ position: 'absolute', top: 140, left: 64, right: 64, height: LIST_H, display: 'grid', gridTemplateRows: `repeat(${n}, 1fr)`, gap }}>
           {rows.map((t, i) => {
@@ -328,15 +409,16 @@ function Scoreboard({ s }: { s: PublicState }) {
                     <div className="row" style={{ gap: 0, minWidth: 0 }}>
                       <span style={{ fontWeight: 800, fontSize: headerH * 0.4, letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{t.name}</span>
                       <Medals wins={t.wins} size={headerH * 0.32} />
+                      <RankMove delta={move(t, rank).delta} size={headerH * 0.18} />
                     </div>
                     <div style={{ fontSize: headerH * 0.2, fontWeight: 700 }} className="muted">{t.timeline.length}/{target} cards</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: headerH * 0.48, fontWeight: 800, color: 'var(--yellow)', lineHeight: 1 }}>{t.points}</div>
+                    <div style={{ fontSize: headerH * 0.48, fontWeight: 800, color: 'var(--yellow)', lineHeight: 1 }}><CountUp from={move(t, rank).points} to={t.points} delay={1900} /></div>
                     <div className="muted" style={{ fontSize: headerH * 0.16, fontWeight: 700 }}>points</div>
                   </div>
                 </div>
-                <Track team={t} target={target} cardW={cardW} highlight={isNew} captions />
+                <Track team={t} target={target} cardW={cardW} highlight={fresh ? isNew : undefined} captions delay={i * 150} />
               </div>
             );
           })}
@@ -353,6 +435,7 @@ function Scoreboard({ s }: { s: PublicState }) {
   const cardW = Math.floor(Math.min((rowH - 14) * 1.586, trackW / target - 12));
   return (
     <>
+      <FloatingCards />
       <TopBar s={s} title={title} />
       <div key={p} style={{ position: 'absolute', top: 140, left: 64, right: 64, height: LIST_H, display: 'grid', gap, alignContent: 'start' }}>
         {rows.map((t, i) => {
@@ -366,12 +449,13 @@ function Scoreboard({ s }: { s: PublicState }) {
                 <div className="row" style={{ gap: 0, minWidth: 0 }}>
                   <span style={{ fontWeight: 800, fontSize: Math.min(46, rowH * 0.32), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{t.name}</span>
                   <Medals wins={t.wins} size={Math.min(40, rowH * 0.3)} />
+                  <RankMove delta={move(t, rank).delta} size={Math.min(24, rowH * 0.18)} />
                 </div>
                 <div style={{ fontSize: Math.min(32, rowH * 0.24), fontWeight: 700 }}>
-                  <span style={{ color: 'var(--yellow)' }}>{t.points} pts</span> <span className="muted">· {t.timeline.length}/{target} cards</span>
+                  <span style={{ color: 'var(--yellow)' }}><CountUp from={move(t, rank).points} to={t.points} delay={1900} /> pts</span> <span className="muted">· {t.timeline.length}/{target} cards</span>
                 </div>
               </div>
-              <Track team={t} target={target} cardW={cardW} highlight={isNew} />
+              <Track team={t} target={target} cardW={cardW} highlight={fresh ? isNew : undefined} delay={i * 110} />
             </div>
           );
         })}
@@ -382,7 +466,7 @@ function Scoreboard({ s }: { s: PublicState }) {
 
 function Confetti() {
   const pieces = useMemo(
-    () => Array.from({ length: 90 }, (_, i) => ({
+    () => Array.from({ length: 50 }, (_, i) => ({
       left: Math.random() * 100, delay: Math.random() * 4, dur: 3 + Math.random() * 3,
       color: ['#ff6a4d', '#ffd66b', '#6fe3b4', '#7fd0ea', '#f7a1c4', '#fff'][i % 6], rot: Math.random() * 360, w: 10 + Math.random() * 12,
     })),
@@ -422,6 +506,7 @@ function StageEnd({ s }: { s: PublicState }) {
   const ranked = [...s.teams].sort((a, b) => b.points - a.points);
   return (
     <>
+      <CardRain />
       <Confetti />
       <TopBar s={s} />
       <div style={{ position: 'absolute', top: 150, left: 64, right: 64, bottom: 60, display: 'grid', gridTemplateColumns: '1.15fr 1fr', gap: 60, alignItems: 'center' }}>
@@ -431,14 +516,14 @@ function StageEnd({ s }: { s: PublicState }) {
             <>
               <div className="pop" style={{ position: 'relative', transform: 'rotate(-3deg)' }}>
                 <TeamCard team={w} width={560} highlight />
-                <div className="pop" style={{ position: 'absolute', right: -40, top: -40, animationDelay: '0.5s' }}><Medals wins={[s.stage.index + 1]} size={120} /></div>
+                <div className="medal-drop" style={{ position: 'absolute', right: -40, top: -40, zIndex: 3 }}><Medals wins={[s.stage.index + 1]} size={120} /></div>
               </div>
               <div style={{ fontSize: 84, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1 }}>{w.name}</div>
               <div className="pill ok pop" style={{ fontSize: 34, padding: '10px 26px', animationDelay: '0.8s', background: 'rgba(255,214,107,0.2)', color: 'var(--yellow)' }}>+{s.settings.winBonus} points</div>
             </>
           )}
         </div>
-        <div className="panel stack" style={{ padding: 26, gap: 10 }}>
+        <div className="panel stack" style={{ padding: 26, gap: 10, background: 'rgba(12,8,80,0.88)', backdropFilter: 'blur(6px)' }}>
           <div style={{ fontSize: 30, fontWeight: 800, marginBottom: 6 }}>Total <span className="accent">points</span></div>
           {ranked.slice(0, 10).map((t, i) => (
             <div key={t.id} className="row fadeup" style={{ gap: 16, animationDelay: `${0.4 + i * 0.06}s`, fontSize: 26 }}>
@@ -462,6 +547,7 @@ function Finished({ s }: { s: PublicState }) {
   const rest = ranked.slice(3, 12);
   return (
     <>
+      <CardRain />
       <Confetti />
       <TopBar s={s} />
       <div className="center" style={{ position: 'absolute', top: 110, left: 0, right: 0 }}>
@@ -486,7 +572,7 @@ function Finished({ s }: { s: PublicState }) {
         )}
       </div>
       {rest.length > 0 && (
-        <div className="panel stack" style={{ position: 'absolute', right: 64, top: 280, width: 480, padding: 22, gap: 10 }}>
+        <div className="panel stack" style={{ position: 'absolute', right: 64, top: 280, width: 480, padding: 22, gap: 10, background: 'rgba(12,8,80,0.88)', backdropFilter: 'blur(6px)' }}>
           {rest.map((t, i) => (
             <div key={t.id} className="row" style={{ gap: 12, fontSize: 22 }}>
               <b style={{ width: 30, color: 'var(--muted)' }}>{i + 4}</b>
