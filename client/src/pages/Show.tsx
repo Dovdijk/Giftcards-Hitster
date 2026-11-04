@@ -76,6 +76,9 @@ function Screen({ s, serverNow }: { s: PublicState; serverNow: () => number }) {
   }
 }
 
+const lobbyCols = (n: number) => (n <= 2 ? 2 : n <= 6 ? 3 : n <= 12 ? 4 : 5);
+const lobbyCardW = (n: number) => (n <= 2 ? 420 : n <= 6 ? 290 : n <= 12 ? 214 : 172);
+
 function Lobby({ s }: { s: PublicState }) {
   const [qr, setQr] = useState('');
   const url = `${window.location.origin}/join/${s.game.code}`;
@@ -104,10 +107,10 @@ function Lobby({ s }: { s: PublicState }) {
         <div style={{ fontSize: 30, fontWeight: 800, marginBottom: 20 }}>
           {s.teams.length} team{s.teams.length === 1 ? '' : 's'} ready
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${s.teams.length > 12 ? 5 : 4}, 1fr)`, gap: 18 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${lobbyCols(s.teams.length)}, 1fr)`, gap: 18 }}>
           {s.teams.map((t, i) => (
             <div key={t.id} className="pop" style={{ animationDelay: `${(i % 5) * 60}ms`, transform: `rotate(${((i * 37) % 7) - 3}deg)` }}>
-              <TeamCard team={t} width={s.teams.length > 12 ? 172 : 214} />
+              <TeamCard team={t} width={lobbyCardW(s.teams.length)} />
             </div>
           ))}
         </div>
@@ -196,10 +199,15 @@ function TeamAnswerCard({ s, t, showResult, compact }: { s: PublicState; t: Team
 function AnswerGrid({ s, showResult, top }: { s: PublicState; showResult: boolean; top: number }) {
   const r = s.round!;
   const players = s.teams.filter((t) => r.participants.includes(t.id));
-  const cols = players.length <= 4 ? players.length || 1 : players.length <= 8 ? 4 : 5;
+  const n = players.length;
+  const cols = n <= 2 ? Math.max(n, 1) : n <= 4 ? 2 : n <= 6 ? 3 : n <= 8 ? 4 : 5;
+  // few teams: blow the cards up so they fill the screen
+  const zoom = n <= 2 ? 1.9 : n <= 4 ? 1.45 : n <= 6 ? 1.3 : 1;
   return (
-    <div style={{ position: 'absolute', top, left: 64, right: 64, bottom: 40, display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: 16, alignContent: 'start' }}>
-      {players.map((t) => <TeamAnswerCard key={t.id} s={s} t={t} showResult={showResult} compact={showResult ? players.length > 10 : players.length > 15} />)}
+    <div style={{ position: 'absolute', top, left: 64, right: 64, bottom: 40 }}>
+      <div style={{ zoom, width: STAGE_W / zoom, display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: 16, alignContent: 'start' }}>
+        {players.map((t) => <TeamAnswerCard key={t.id} s={s} t={t} showResult={showResult} compact={showResult ? n > 10 : n > 15} />)}
+      </div>
     </div>
   );
 }
@@ -231,22 +239,40 @@ function Reveal({ s }: { s: PublicState }) {
   );
 }
 
-function Track({ team, target, cardW, highlight }: { team: TeamPublic; target: number; cardW: number; highlight?: (c: TimelineCard) => boolean }) {
+function Track({ team, target, cardW, highlight, captions }: { team: TeamPublic; target: number; cardW: number; highlight?: (c: TimelineCard) => boolean; captions?: boolean }) {
   const colors = songCardIndexes(team.timeline);
+  const cardH = cardW / 1.586;
+  const capH = captions ? Math.round(cardW * 0.34) : 0;
   return (
-    <div className="grow" style={{ position: 'relative', height: cardW / 1.586 + 10, minWidth: 0 }}>
-      <div style={{ position: 'absolute', left: 0, right: 0, top: '50%', height: 5, marginTop: -2.5, borderRadius: 5, background: 'linear-gradient(90deg, var(--pink), var(--rose), var(--sky))', opacity: 0.85 }} />
-      <div style={{ position: 'absolute', inset: 0, display: 'grid', gridTemplateColumns: `repeat(${target}, 1fr)`, alignItems: 'center', justifyItems: 'center' }}>
+    <div className="grow" style={{ position: 'relative', height: cardH + 10 + capH, minWidth: 0 }}>
+      <div style={{ position: 'absolute', left: 0, right: 0, top: cardH / 2 + 5, height: Math.max(5, cardW / 30), transform: 'translateY(-50%)', borderRadius: 5, background: 'linear-gradient(90deg, var(--pink), var(--rose), var(--sky))', opacity: 0.85 }} />
+      <div style={{ position: 'absolute', inset: 0, display: 'grid', gridTemplateColumns: `repeat(${target}, 1fr)`, alignItems: 'start', justifyItems: 'center' }}>
         {Array.from({ length: target }).map((_, k) => {
           const c = team.timeline[k];
-          if (!c) return <div key={k} style={{ width: 16, height: 16, borderRadius: '50%', background: 'var(--navy-2)', border: '3px solid rgba(255,255,255,0.35)' }} />;
+          if (!c) {
+            const d = Math.max(16, cardW / 9);
+            return <div key={k} style={{ marginTop: cardH / 2 + 5 - d / 2, width: d, height: d, borderRadius: '50%', background: 'var(--navy-2)', border: '3px solid rgba(255,255,255,0.35)' }} />;
+          }
           const hl = highlight?.(c);
-          return <GiftCard key={k} year={c.year} start={c.songId === null} color={colors[k]} width={cardW} glow={hl} className={hl ? 'pop' : undefined} style={{ fontSize: cardW / 8, animationDelay: '0.6s' }} />;
+          return (
+            <div key={k} style={{ display: 'grid', justifyItems: 'center', paddingTop: 5, width: cardW }}>
+              <GiftCard year={c.year} start={c.songId === null} color={colors[k]} width={cardW} glow={hl} className={hl ? 'pop' : undefined} style={{ fontSize: cardW / 8, animationDelay: '0.6s' }} />
+              {captions && (
+                <div style={{ marginTop: 6, width: cardW + 8, textAlign: 'center', fontSize: Math.max(12, cardW * 0.1), lineHeight: 1.2, fontWeight: 700 }}>
+                  <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.songId === null ? 'Start' : c.title}</div>
+                  <div className="muted" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 500 }}>{c.artist ?? ''}</div>
+                </div>
+              )}
+            </div>
+          );
         })}
       </div>
     </div>
   );
 }
+
+const STAGE_W = 1920 - 128; // usable width on the 1920 stage
+const LIST_H = 880; // usable height below the top bar
 
 function Scoreboard({ s }: { s: PublicState }) {
   const ranked = [...s.teams].sort((a, b) => b.timeline.length - a.timeline.length || b.points - a.points);
@@ -261,27 +287,87 @@ function Scoreboard({ s }: { s: PublicState }) {
   const p = Math.min(page, pages - 1);
   const rows = ranked.slice(p * perPage, p * perPage + perPage);
   const target = s.settings.targetCards;
-  const rowH = Math.min(150, Math.floor((870 - (rows.length - 1) * 10) / Math.max(rows.length, 1)));
-  const cardW = Math.min(Math.round((rowH - 12) * 1.586), Math.floor(1260 / target) - 14);
   const song = s.round?.song;
   const isNew = (c: TimelineCard) => !!song && c.songId !== null && c.title === song.title && c.year === song.year;
+  const n = Math.max(rows.length, 1);
+  const gap = n <= 3 ? 24 : n <= 6 ? 16 : 10;
+  const rowH = Math.floor((LIST_H - (n - 1) * gap) / n);
+  const title = s.pendingBonus.length ? <span style={{ color: 'var(--yellow)' }}>{s.outcome?.message}</span> : <>Score<span className="accent">board</span>{pages > 1 && <span className="muted" style={{ fontSize: 22 }}>  {p + 1}/{pages}</span>}</>;
+
+  const box = (t: TeamPublic, rank: number, i: number, extra: React.CSSProperties) => ({
+    key: t.id,
+    className: 'fadeup',
+    style: {
+      borderRadius: 26,
+      animationDelay: `${i * 60}ms`,
+      background: rank === 1 ? 'rgba(255,214,107,0.12)' : 'rgba(255,255,255,0.06)',
+      border: s.pendingBonus.includes(t.id) ? '3px solid var(--yellow)' : '1px solid var(--line)',
+      ...extra,
+    } as React.CSSProperties,
+  });
+  const rankColor = (rank: number) => (rank === 1 ? 'var(--yellow)' : rank <= 3 ? '#fff' : 'var(--muted)');
+
+  // Few teams: a big block per team, header on top and a full-width timeline with song titles.
+  if (n <= 3) {
+    const pad = 28;
+    const headerH = Math.min(150, Math.round(rowH * 0.32));
+    const cardW = Math.floor(Math.min((STAGE_W - pad * 2) / target - 18, ((rowH - headerH - pad * 2 - 20) / (1 / 1.586 + 0.34))));
+    return (
+      <>
+        <TopBar s={s} title={title} />
+        <div style={{ position: 'absolute', top: 140, left: 64, right: 64, height: LIST_H, display: 'grid', gridTemplateRows: `repeat(${n}, 1fr)`, gap }}>
+          {rows.map((t, i) => {
+            const rank = p * perPage + i + 1;
+            const b = box(t, rank, i, { padding: pad, display: 'grid', alignContent: 'center', gap: 16 });
+            return (
+              <div key={b.key} className={b.className} style={b.style}>
+                <div className="row" style={{ gap: 26, height: headerH }}>
+                  <div style={{ fontSize: headerH * 0.6, fontWeight: 800, color: rankColor(rank), width: headerH * 0.55 }}>{rank}</div>
+                  <Avatar team={t} size={headerH} />
+                  <div className="grow" style={{ minWidth: 0 }}>
+                    <div className="row" style={{ gap: 0, minWidth: 0 }}>
+                      <span style={{ fontWeight: 800, fontSize: headerH * 0.4, letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{t.name}</span>
+                      <Medals wins={t.wins} size={headerH * 0.32} />
+                    </div>
+                    <div style={{ fontSize: headerH * 0.2, fontWeight: 700 }} className="muted">{t.timeline.length}/{target} cards</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: headerH * 0.48, fontWeight: 800, color: 'var(--yellow)', lineHeight: 1 }}>{t.points}</div>
+                    <div className="muted" style={{ fontSize: headerH * 0.16, fontWeight: 700 }}>points</div>
+                  </div>
+                </div>
+                <Track team={t} target={target} cardW={cardW} highlight={isNew} captions />
+              </div>
+            );
+          })}
+        </div>
+      </>
+    );
+  }
+
+  // More teams: one row per team, everything grows with the row height.
+  const avatar = Math.min(150, rowH - 18);
+  const nameW = rowH > 130 ? 400 : 330;
+  const rankW = Math.min(80, rowH * 0.5);
+  const trackW = STAGE_W - 44 - rankW - avatar - nameW - 3 * 22;
+  const cardW = Math.floor(Math.min((rowH - 14) * 1.586, trackW / target - 12));
   return (
     <>
-      <TopBar s={s} title={s.pendingBonus.length ? <span style={{ color: 'var(--yellow)' }}>{s.outcome?.message}</span> : <>Score<span className="accent">board</span>{pages > 1 && <span className="muted" style={{ fontSize: 22 }}>  {p + 1}/{pages}</span>}</>} />
-      <div key={p} style={{ position: 'absolute', top: 140, left: 64, right: 64, bottom: 50, display: 'grid', gap: 10, alignContent: 'start' }}>
+      <TopBar s={s} title={title} />
+      <div key={p} style={{ position: 'absolute', top: 140, left: 64, right: 64, height: LIST_H, display: 'grid', gap, alignContent: 'start' }}>
         {rows.map((t, i) => {
           const rank = p * perPage + i + 1;
-          const tied = s.pendingBonus.includes(t.id);
+          const b = box(t, rank, i, { height: rowH, padding: '0 22px', display: 'flex', alignItems: 'center', gap: 22 });
           return (
-            <div key={t.id} className="row fadeup" style={{ height: rowH, gap: 22, padding: '0 22px', borderRadius: 22, animationDelay: `${i * 50}ms`, background: rank === 1 ? 'rgba(255,214,107,0.12)' : 'rgba(255,255,255,0.06)', border: tied ? '2px solid var(--yellow)' : '1px solid var(--line)' }}>
-              <div style={{ width: 54, fontSize: Math.min(40, rowH * 0.4), fontWeight: 800, color: rank === 1 ? 'var(--yellow)' : rank <= 3 ? '#fff' : 'var(--muted)' }}>{rank}</div>
-              <Avatar team={t} size={rowH - 18} />
-              <div style={{ width: 330, minWidth: 0 }}>
+            <div key={b.key} className={b.className} style={b.style}>
+              <div style={{ width: rankW, fontSize: Math.min(64, rowH * 0.4), fontWeight: 800, color: rankColor(rank) }}>{rank}</div>
+              <Avatar team={t} size={avatar} />
+              <div style={{ width: nameW, minWidth: 0 }}>
                 <div className="row" style={{ gap: 0, minWidth: 0 }}>
-                  <span style={{ fontWeight: 800, fontSize: Math.min(30, rowH * 0.32), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{t.name}</span>
-                  <Medals wins={t.wins} size={Math.min(30, rowH * 0.3)} />
+                  <span style={{ fontWeight: 800, fontSize: Math.min(46, rowH * 0.32), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{t.name}</span>
+                  <Medals wins={t.wins} size={Math.min(40, rowH * 0.3)} />
                 </div>
-                <div style={{ fontSize: Math.min(22, rowH * 0.24), fontWeight: 700 }}>
+                <div style={{ fontSize: Math.min(32, rowH * 0.24), fontWeight: 700 }}>
                   <span style={{ color: 'var(--yellow)' }}>{t.points} pts</span> <span className="muted">· {t.timeline.length}/{target} cards</span>
                 </div>
               </div>
