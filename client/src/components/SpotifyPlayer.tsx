@@ -76,10 +76,46 @@ interface Props {
   trackId: string | null;
   startAt?: number; // seconds
   autoplay?: boolean; // start right after loading (scoreboard music)
+  autostart?: boolean; // autopilot: start the song once Spotify says it is ready, and check that it plays
   onPlayback?: (p: PlaybackInfo) => void;
 }
 
-export const SpotifyPlayer = forwardRef<PlayerHandle, Props>(function SpotifyPlayer({ trackId, startAt = 0, autoplay, onPlayback }, ref) {
+export const SpotifyPlayer = forwardRef<PlayerHandle, Props>(function SpotifyPlayer({ trackId, startAt = 0, autoplay, autostart, onPlayback }, ref) {
+  const autostartRef = useRef(autostart);
+  autostartRef.current = autostart;
+  // what Spotify last reported for the loaded song (only counts reports that came after the load)
+  const live = useRef<{ uri: string; playing: boolean; since: number }>({ uri: '', playing: false, since: 0 });
+  const isReady = useRef<string | null>(null); // uri for which Spotify fired "ready"
+  const tries = useRef<{ uri: string; n: number; timer: ReturnType<typeof setTimeout> | null }>({ uri: '', n: 0, timer: null });
+  const stopTries = () => {
+    if (tries.current.timer) clearTimeout(tries.current.timer);
+    tries.current = { uri: '', n: 0, timer: null };
+  };
+  const playingNow = (uri: string) => live.current.uri === uri && live.current.playing;
+  const attempt = (uri: string) => {
+    const tr = tries.current;
+    if (tr.uri !== uri) return;
+    if (!autostartRef.current || loaded.current?.uri !== uri) return stopTries();
+    if (playingNow(uri)) {
+      spLog(`autostart: playing ✓`);
+      return stopTries();
+    }
+    if (tr.n >= 5) {
+      spLog('autostart: gave up after 5 tries');
+      return stopTries();
+    }
+    tr.n++;
+    spLog(`autostart: play() try ${tr.n}`);
+    ctrl.current?.play();
+    tr.timer = setTimeout(() => attempt(uri), 2500);
+  };
+  const startTries = (uri: string, delay: number) => {
+    if (!autostartRef.current || playingNow(uri)) return;
+    if (tries.current.uri === uri && tries.current.n > 0) return;
+    stopTries();
+    tries.current = { uri, n: 0, timer: setTimeout(() => attempt(uri), delay) };
+  };
+
   const holder = useRef<HTMLDivElement>(null);
   const ctrl = useRef<Controller | null>(null);
   const loaded = useRef<{ uri: string; startAt: number; seeked: boolean } | null>(null);
@@ -105,7 +141,12 @@ export const SpotifyPlayer = forwardRef<PlayerHandle, Props>(function SpotifyPla
   const load = (c: Controller, uri: string) => {
     loaded.current = { uri, startAt, seeked: startAt === 0 };
     spLog(`load ${uri.split(':').pop()}${startAt ? ' from ' + startAt + 's' : ''}`);
+    live.current = { uri, playing: false, since: Date.now() };
+    isReady.current = null;
+    stopTries();
     c.loadUri(uri, false, startAt);
+    // normally Spotify says "ready" within ~2 sec; if it doesn't, try anyway
+    startTries(uri, 5000);
     if (autoplay) setTimeout(() => ctrl.current?.play(), 700);
   };
 
@@ -141,7 +182,15 @@ export const SpotifyPlayer = forwardRef<PlayerHandle, Props>(function SpotifyPla
         (document as any).createElement = origCreate;
         ctrl.current = c;
         spLog(`player created, allow="${spIframeAllow()}"`);
-        c.addListener('ready', () => spLog('spotify: ready'));
+        c.addListener('ready', () => {
+          const u = loaded.current?.uri ?? '';
+          spLog('spotify: ready');
+          isReady.current = u;
+          if (autostartRef.current && !playingNow(u)) {
+            stopTries();
+            startTries(u, 600);
+          }
+        });
         setReady(true);
         setFailed(false);
         loaded.current = { uri, startAt, seeked: startAt === 0 };
@@ -157,16 +206,19 @@ export const SpotifyPlayer = forwardRef<PlayerHandle, Props>(function SpotifyPla
             l.seeked = true;
           }
           // some embed versions keep isBuffering on while playing; a moving position also means playing
-          const sig = `${d.isPaused ? 'paused' : 'playing'}${d.isBuffering ? '+buffering' : ''} dur ${Math.round((d.duration ?? 0) / 1000)}s`;
+          const sig = `${d.isPaused ? 'paused' : 'playing'}${d.isBuffering ? '+buffering' : ''} dur ${Math.round((d.duration ?? 0) / 1000)}s${typeof d.playingURI === 'string' ? ' ' + d.playingURI.split(':').pop() : ''}`;
           if (sig !== lastSig.current) {
             lastSig.current = sig;
             spLog(`spotify: ${sig} at ${Math.round((d.position ?? 0) / 1000)}s`);
           }
+          const pid = typeof d.playingURI === 'string' ? d.playingURI : null;
+          if (l && (pid ? pid === l.uri : Date.now() - live.current.since > 1500)) live.current = { uri: l.uri, playing: !d.isPaused, since: live.current.since };
           const last = lastPos.current;
           const moving = last !== null && (d.position ?? 0) > last;
           lastPos.current = d.position ?? 0;
           cb.current?.({
-            playing: d.isPaused === false && (!d.isBuffering || moving),
+            // right after loading, a report without track id may still be about the previous song
+            playing: d.isPaused === false && (!d.isBuffering || moving) && !(pid ? pid !== l?.uri : Date.now() - live.current.since < 1500),
             playingId: typeof d.playingURI === 'string' ? d.playingURI.split(':').pop() ?? null : null,
             position: d.position ?? 0,
             duration: d.duration ?? 0,
@@ -181,6 +233,14 @@ export const SpotifyPlayer = forwardRef<PlayerHandle, Props>(function SpotifyPla
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackId, startAt, autoplay]);
+
+  useEffect(() => {
+    const u = loaded.current?.uri;
+    if (!autostart) return stopTries();
+    if (u && isReady.current === u) startTries(u, 600);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autostart, trackId]);
+  useEffect(() => () => stopTries(), []);
 
   return (
     <div>

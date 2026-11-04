@@ -98,7 +98,7 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
   // pressing play in the Spotify player itself also starts the timer
   const lastStart = useRef<{ key: string; at: number } | null>(null);
   const isGameTrack = (p: PlaybackInfo | null) =>
-    !!p && !!gameSong?.spotifyId && (p.trackId === gameSong.spotifyId || p.playingId === gameSong.spotifyId);
+    !!p && !!gameSong?.spotifyId && (p.playingId ? p.playingId === gameSong.spotifyId : p.trackId === gameSong.spotifyId);
   const tryStart = () => {
     if (phaseRef.current !== 'ready' || !turnKey) return;
     const p = pbRef.current;
@@ -124,24 +124,7 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
     return () => clearInterval(t);
   }, [s.phase, turnKey]);
 
-  // autopilot: try to start the song by itself (the host can always press play)
   const auto = s.settings.autopilot;
-  useEffect(() => {
-    if (!auto || s.phase !== 'ready' || !gameSong?.spotifyId) return;
-    // the embed needs a moment after loading a new song; try a few times, alternating play() and resume()
-    const id = gameSong.spotifyId;
-    const timers = [1500, 3500, 6000, 9000].map((ms, i) =>
-      setTimeout(() => {
-        const pb = pbRef.current;
-        if (pb?.playing && (pb.trackId === id || pb.playingId === id)) return;
-        spLog(`autopilot: try ${i + 1} of 4`);
-        if (i % 2) player.current?.resume();
-        else player.current?.play();
-      }, ms),
-    );
-    return () => timers.forEach(clearTimeout);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auto, s.phase, turnKey]);
   const autoLeft = useCountdown(auto ? s.autoAt : null, serverNow);
   // song loaded but still silent after a few seconds: ask the host to press play
   const [needsClick, setNeedsClick] = useState(false);
@@ -252,7 +235,7 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
           </div>
         )}
         <div style={{ display: nowPlaying?.spotifyId ? 'block' : 'none', position: 'relative' }}>
-          <SpotifyPlayer ref={player} trackId={nowPlaying?.spotifyId ?? null} startAt={isMusic ? music!.startAt : 0} autoplay={isMusic} onPlayback={onPlayback} />
+          <SpotifyPlayer ref={player} trackId={nowPlaying?.spotifyId ?? null} startAt={isMusic ? music!.startAt : 0} autoplay={isMusic} autostart={auto && s.phase === 'ready' && !isMusic && !!gameSong?.spotifyId} onPlayback={onPlayback} />
           {hidden && (
             // covers cover art, title and artist; the play button on the right stays clickable
             <div style={{ position: 'absolute', left: 0, top: 0, height: 152, right: 64, borderRadius: '12px 0 0 12px', background: 'linear-gradient(90deg, #1b1170 85%, rgba(27,17,112,0.85))', display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 14, textAlign: 'center', padding: 12 }}>
