@@ -9,6 +9,8 @@ import pg from 'pg';
 export interface KV {
   load(key: string): Promise<unknown | null>;
   save(key: string, value: unknown): Promise<void>;
+  delete(key: string): Promise<void>;
+  keys(prefix: string): Promise<string[]>;
 }
 
 class PgKV implements KV {
@@ -33,6 +35,15 @@ class PgKV implements KV {
       [key, JSON.stringify(value)],
     );
   }
+  async delete(key: string) {
+    await this.ready;
+    await this.pool.query('DELETE FROM kv WHERE key = $1', [key]);
+  }
+  async keys(prefix: string) {
+    await this.ready;
+    const r = await this.pool.query('SELECT key FROM kv WHERE key LIKE $1', [prefix.replace(/[%_]/g, '\\$&') + '%']);
+    return r.rows.map((x) => x.key as string);
+  }
 }
 
 class FileKV implements KV {
@@ -40,7 +51,17 @@ class FileKV implements KV {
     fs.mkdirSync(dir, { recursive: true });
   }
   private file(key: string) {
-    return path.join(this.dir, `${key}.json`);
+    return path.join(this.dir, `${encodeURIComponent(key)}.json`);
+  }
+  async delete(key: string) {
+    fs.rmSync(this.file(key), { force: true });
+  }
+  async keys(prefix: string) {
+    return fs
+      .readdirSync(this.dir)
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => decodeURIComponent(f.slice(0, -5)))
+      .filter((k) => k.startsWith(prefix));
   }
   async load(key: string) {
     try {
@@ -84,6 +105,10 @@ export function debouncedSaver(kv: KV, key: string, getValue: () => unknown, ms 
     async flushNow() {
       if (timer) clearTimeout(timer);
       await flush();
+    },
+    cancel() {
+      if (timer) clearTimeout(timer);
+      timer = null;
     },
   };
 }

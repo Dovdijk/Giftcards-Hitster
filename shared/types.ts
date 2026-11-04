@@ -88,6 +88,7 @@ export interface Outcome {
 
 /** What the show screen and players receive: never contains the song before the reveal. */
 export interface PublicState {
+  game: GameInfo;
   phase: Phase;
   serverNow: number;
   settings: Settings;
@@ -121,4 +122,24 @@ export interface AdminState extends PublicState {
 export interface PlayerState extends PublicState {
   me: TeamPublic | null;
   myAnswer: Answer | null;
+}
+
+export interface GameSummary {
+  id: string;
+  code: string;
+  name: string;
+  ownerId: string;
+  createdAt: number;
+  updatedAt: number;
+  phase: Phase;
+  teams: number;
+  songs: number;
+  songsToCheck: number;
+  bonusSongs: number;
+}
+
+export interface GameInfo {
+  id: string;
+  code: string;
+  name: string;
 }

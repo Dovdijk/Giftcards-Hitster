@@ -1,42 +1,52 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import type { PlayerState, TimelineCard } from '../../../shared/types';
 import { useCountdown, useGameSocket } from '../socket';
 import { Avatar, Offline, Ring, Vinyl, Wordmark, useToast } from '../components/common';
 import { GiftCard, Shapes, TeamCard, TimelineRow } from '../components/giftcard';
 
-const TOKEN_KEY = 'hitster-token';
+const tokenKey = (code: string) => `hitster-token-${code}`;
 
-function readToken() {
+function readToken(code: string) {
   try {
-    return localStorage.getItem(TOKEN_KEY) ?? undefined;
+    return localStorage.getItem(tokenKey(code)) ?? undefined;
   } catch {
     return undefined;
   }
 }
-function writeToken(t: string | null) {
+function writeToken(code: string, t: string | null) {
   try {
-    if (t) localStorage.setItem(TOKEN_KEY, t);
-    else localStorage.removeItem(TOKEN_KEY);
+    if (t) localStorage.setItem(tokenKey(code), t);
+    else localStorage.removeItem(tokenKey(code));
   } catch {
     /* private mode */
   }
 }
 
 export default function Play() {
-  const [token, setToken] = useState<string | undefined>(readToken);
-  const auth = useMemo(() => ({ role: 'player', token }), [token]);
+  const code = (useParams().code ?? '').toUpperCase();
+  const [token, setToken] = useState<string | undefined>(() => readToken(code));
+  const auth = useMemo(() => ({ role: 'player', token, code }), [token, code]);
   const g = useGameSocket<PlayerState>(auth);
   const { toast, show } = useToast();
 
   useEffect(() => {
     if (g.tokenInvalid) {
-      writeToken(null);
+      writeToken(code, null);
       setToken(undefined);
     }
   }, [g.tokenInvalid]);
 
   const s = g.state;
+  if (g.authError)
+    return (
+      <div className="center stack" style={{ height: '100%', padding: 24 }}>
+        <Wordmark />
+        <div style={{ fontWeight: 800, fontSize: 22 }}>{g.authError === 'No game with this code' ? `No game with code ${code}` : g.authError}</div>
+        <a className="btn" href="/">Enter another code</a>
+      </div>
+    );
   if (!s) return <div className="center" style={{ height: '100%' }}><Wordmark /></div>;
 
   const me = s.me;
@@ -48,13 +58,13 @@ export default function Play() {
         onJoin={async (name) => {
           const r = await g.emit<{ token: string }>('join', name);
           if (!r.ok) return show(r.error);
-          writeToken(r.result.token);
+          writeToken(code, r.result.token);
           setToken(r.result.token);
         }}
       />
     );
   } else if (s.phase === 'lobby') {
-    body = <Lobby state={s} token={token!} emit={g.emit} toast={show} />;
+    body = <Lobby state={s} token={token!} code={code} emit={g.emit} toast={show} />;
   } else {
     body = <InGame state={s} emit={g.emit} serverNow={g.serverNow} toast={show} />;
   }
@@ -65,7 +75,7 @@ export default function Play() {
       <Offline connected={g.connected} />
       <div className="row" style={{ justifyContent: 'space-between', marginBottom: 14 }}>
         <Wordmark size={18} />
-        <span className="pill">Hitster Night</span>
+        <span className="pill" style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.game.name}</span>
       </div>
       {body}
       {toast}
@@ -123,7 +133,7 @@ async function resizeImage(file: File, max = 640): Promise<string> {
   }
 }
 
-function Lobby({ state, token, emit, toast }: { state: PlayerState; token: string; emit: ReturnType<typeof useGameSocket>['emit']; toast: (m: string) => void }) {
+function Lobby({ state, token, code, emit, toast }: { state: PlayerState; token: string; code: string; emit: ReturnType<typeof useGameSocket>['emit']; toast: (m: string) => void }) {
   const me = state.me!;
   const [name, setName] = useState(me.name);
   const [uploading, setUploading] = useState(false);
@@ -134,7 +144,7 @@ function Lobby({ state, token, emit, toast }: { state: PlayerState; token: strin
     setUploading(true);
     try {
       const dataUrl = await resizeImage(file);
-      const res = await fetch('/api/photo', {
+      const res = await fetch(`/api/photo/${code}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-team-token': token },
         body: JSON.stringify({ dataUrl }),

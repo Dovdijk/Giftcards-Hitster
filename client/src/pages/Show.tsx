@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import QRCode from 'qrcode';
 import type { PublicState, TeamPublic, TimelineCard } from '../../../shared/types';
 import { useCountdown, useGameSocket } from '../socket';
@@ -31,11 +32,15 @@ function Stage({ children }: { children: React.ReactNode }) {
 }
 
 export default function Show() {
-  const auth = useMemo(() => ({ role: 'show' }), []);
+  const code = (useParams().code ?? '').toUpperCase();
+  const auth = useMemo(() => ({ role: 'show', code }), [code]);
   const g = useGameSocket<PublicState>(auth);
   const s = g.state;
   return (
     <Stage>
+      {g.authError && (
+        <div className="center" style={{ position: 'absolute', inset: 0, fontSize: 48, fontWeight: 800 }}>{g.authError}</div>
+      )}
       {!g.connected && <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 9 }} className="pill bad">offline</div>}
       {s && <Screen s={s} serverNow={g.serverNow} />}
     </Stage>
@@ -48,7 +53,7 @@ function TopBar({ s, title }: { s: PublicState; title?: React.ReactNode }) {
       <Wordmark size={34} />
       <div style={{ fontSize: 30, fontWeight: 800 }}>{title}</div>
       <div className="pill" style={{ fontSize: 22, padding: '8px 18px' }}>
-        {s.round ? (s.round.kind === 'bonus' ? '⭐ Bonus round' : `Round ${s.round.index}`) : 'Hitster Night'}
+        {s.round && s.phase !== 'lobby' ? (s.round.kind === 'bonus' ? '⭐ Bonus round' : `Round ${s.round.index}`) : s.game.name}
       </div>
     </div>
   );
@@ -69,7 +74,7 @@ function Screen({ s, serverNow }: { s: PublicState; serverNow: () => number }) {
 
 function Lobby({ s }: { s: PublicState }) {
   const [qr, setQr] = useState('');
-  const url = `${window.location.origin}/`;
+  const url = `${window.location.origin}/join/${s.game.code}`;
   useEffect(() => {
     QRCode.toDataURL(url, { margin: 1, width: 520, color: { dark: '#000749', light: '#ffffff' } }).then(setQr);
   }, [url]);
@@ -86,6 +91,8 @@ function Lobby({ s }: { s: PublicState }) {
           <div style={{ fontSize: 28, fontWeight: 700 }}>
             or go to<br />
             <span style={{ color: 'var(--yellow)' }}>{window.location.host}</span>
+            <br />and enter code
+            <div style={{ fontSize: 84, fontWeight: 800, letterSpacing: '0.12em', color: '#fff', lineHeight: 1.1 }}>{s.game.code}</div>
           </div>
         </div>
       </div>

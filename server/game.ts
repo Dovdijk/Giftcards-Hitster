@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import type {
   AdminState,
+  GameInfo,
   Answer,
   Outcome,
   Phase,
@@ -61,6 +62,7 @@ function hasContent(a: Answer | undefined) {
 
 export class Game extends EventEmitter {
   data: GameData;
+  info: GameInfo = { id: '', code: '', name: '' };
   private timer: NodeJS.Timeout | null = null;
 
   constructor(data?: GameData | null) {
@@ -101,6 +103,10 @@ export class Game extends EventEmitter {
     const r = this.round;
     if (this.data.phase === 'playing' && r?.endsAt) this.scheduleEnd(r.endsAt);
     if (this.data.phase === 'answers') this.scheduleReveal();
+  }
+  dispose() {
+    this.clearTimer();
+    this.removeAllListeners();
   }
   private clearTimer() {
     if (this.timer) clearTimeout(this.timer);
@@ -516,6 +522,7 @@ export class Game extends EventEmitter {
     const afterReveal = ['reveal', 'scoreboard', 'finished'].includes(phase);
     const song = r ? this.song(r.songId) : null;
     return {
+      game: this.info,
       phase,
       serverNow: Date.now(),
       settings: this.data.settings,

@@ -2,48 +2,31 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AdminState, Song, TeamPublic } from '../../../shared/types';
 import { useCountdown, useGameSocket } from '../socket';
 import { Avatar, Offline, Ring, Wordmark, useToast } from '../components/common';
+import { Link, useParams } from 'react-router-dom';
 import { SpotifyPlayer, type PlayerHandle, type PlaybackInfo } from '../components/SpotifyPlayer';
 
-const PW_KEY = 'hitster-admin-pw';
 type Emit = ReturnType<typeof useGameSocket>['emit'];
 
 export default function Admin() {
-  const [pw, setPw] = useState<string | null>(() => {
-    try { return localStorage.getItem(PW_KEY); } catch { return null; }
-  });
-  const auth = useMemo(() => (pw ? { role: 'admin', password: pw } : null), [pw]);
+  const gameId = useParams().gameId ?? '';
+  const auth = useMemo(() => ({ role: 'admin', gameId }), [gameId]);
   const g = useGameSocket<AdminState>(auth);
 
-  useEffect(() => {
-    if (g.authError) {
-      try { localStorage.removeItem(PW_KEY); } catch { /* ignore */ }
-      setPw(null);
-    }
-  }, [g.authError]);
-
-  if (!pw) return <Login error={g.authError} onLogin={(p) => { try { localStorage.setItem(PW_KEY, p); } catch { /* ignore */ } setPw(p); }} />;
-  if (!g.state) return <div className="center" style={{ height: '100%' }}>Connecting…</div>;
-  return <Dashboard s={g.state} emit={g.emit} serverNow={g.serverNow} connected={g.connected} socket={g.socket} onLogout={() => { localStorage.removeItem(PW_KEY); setPw(null); }} />;
-}
-
-function Login({ onLogin, error }: { onLogin: (p: string) => void; error: string | null }) {
-  const [p, setP] = useState('');
-  return (
-    <div className="center" style={{ height: '100%' }}>
-      <form className="panel stack" style={{ width: 340 }} onSubmit={(e) => { e.preventDefault(); onLogin(p); }}>
+  if (g.authError)
+    return (
+      <div className="center stack" style={{ height: '100%' }}>
         <Wordmark />
-        <div style={{ fontWeight: 800, fontSize: 22 }}>Host login</div>
-        {error && <div className="pill bad">{error}</div>}
-        <input className="input" type="password" placeholder="Password" value={p} onChange={(e) => setP(e.target.value)} autoFocus />
-        <button className="btn" disabled={!p}>Log in</button>
-      </form>
-    </div>
-  );
+        <div style={{ fontWeight: 800, fontSize: 22 }}>{g.authError}</div>
+        <Link className="btn" to="/host">Go to my games</Link>
+      </div>
+    );
+  if (!g.state) return <div className="center" style={{ height: '100%' }}>Connecting…</div>;
+  return <Dashboard s={g.state} emit={g.emit} serverNow={g.serverNow} connected={g.connected} socket={g.socket} />;
 }
 
 type Tab = 'game' | 'songs' | 'teams' | 'settings';
 
-function Dashboard({ s, emit, serverNow, connected, socket, onLogout }: { s: AdminState; emit: Emit; serverNow: () => number; connected: boolean; socket: React.RefObject<any>; onLogout: () => void }) {
+function Dashboard({ s, emit, serverNow, connected, socket }: { s: AdminState; emit: Emit; serverNow: () => number; connected: boolean; socket: React.RefObject<any> }) {
   const [tab, setTab] = useState<Tab>('game');
   const { toast, show } = useToast();
   const act = async (type: string, extra: Record<string, unknown> = {}) => {
@@ -57,15 +40,20 @@ function Dashboard({ s, emit, serverNow, connected, socket, onLogout }: { s: Adm
     <div style={{ maxWidth: 1280, margin: '0 auto', padding: 20 }}>
       <Offline connected={connected} />
       <div className="row wrap" style={{ justifyContent: 'space-between', marginBottom: 16 }}>
-        <div className="row"><Wordmark /><span className="pill">Host panel</span></div>
+        <div className="row" style={{ gap: 14 }}>
+          <Link to="/host" className="btn small ghost">← My games</Link>
+          <div>
+            <div style={{ fontWeight: 800, fontSize: 20 }}>{s.game.name}</div>
+            <div className="muted" style={{ fontSize: 13 }}>Game code <b style={{ color: 'var(--yellow)', letterSpacing: '0.1em' }}>{s.game.code}</b> · players join at {window.location.host}/join/{s.game.code}</div>
+          </div>
+        </div>
         <div className="row">
           {(['game', 'songs', 'teams', 'settings'] as Tab[]).map((t) => (
             <button key={t} className={`btn small ${tab === t ? '' : 'secondary'}`} onClick={() => setTab(t)}>
               {t === 'game' ? 'Game' : t === 'songs' ? `Songs (${s.songs.length})${needsCheck ? ' ⚠' : ''}` : t === 'teams' ? `Teams (${s.teams.length})` : 'Settings'}
             </button>
           ))}
-          <a className="btn small ghost" href="/show" target="_blank" rel="noreferrer">Open show screen ↗</a>
-          <button className="btn small ghost" onClick={onLogout}>Log out</button>
+          <a className="btn small ghost" href={`/show/${s.game.code}`} target="_blank" rel="noreferrer">Open show screen ↗</a>
         </div>
       </div>
       {/* The player stays mounted on every tab so the music never stops when switching. */}

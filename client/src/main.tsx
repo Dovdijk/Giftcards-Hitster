@@ -11,15 +11,19 @@ import './styles.css';
 const Play = lazy(() => import('./pages/Play'));
 const Show = lazy(() => import('./pages/Show'));
 const Admin = lazy(() => import('./pages/Admin'));
+const Home = lazy(() => import('./pages/Home'));
+const Host = lazy(() => import('./pages/Host'));
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
       <Suspense fallback={null}>
         <Routes>
-          <Route path="/show" element={<Show />} />
-          <Route path="/admin" element={<Admin />} />
-          <Route path="*" element={<Play />} />
+          <Route path="/join/:code" element={<Play />} />
+          <Route path="/show/:code" element={<Show />} />
+          <Route path="/host" element={<Host />} />
+          <Route path="/host/:gameId" element={<Admin />} />
+          <Route path="*" element={<Home />} />
         </Routes>
       </Suspense>
     </BrowserRouter>
