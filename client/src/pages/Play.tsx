@@ -4,7 +4,7 @@ import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSe
 import type { PlayerState, TimelineCard } from '../../../shared/types';
 import { useCountdown, useGameSocket } from '../socket';
 import { Avatar, Offline, Ring, Vinyl, Wordmark, useToast } from '../components/common';
-import { GiftCard, Medals, Shapes, TeamCard, TimelineRow } from '../components/giftcard';
+import { GiftCard, Medals, Shapes, TeamCard, TimelineRow, songCardIndexes } from '../components/giftcard';
 
 const tokenKey = (code: string) => `hitster-token-${code}`;
 
@@ -205,7 +205,7 @@ function Header({ state }: { state: PlayerState }) {
           {me.timeline.length}/{state.settings.targetCards} cards · <b style={{ color: 'var(--yellow)' }}>{me.points} pts</b>
         </div>
       </div>
-      <span className="pill" style={{ textAlign: 'center', lineHeight: 1.2 }}>
+      <span className="pill" style={{ textAlign: 'center', lineHeight: 1.2, maxWidth: '42%', fontSize: 12, flex: 'none' }}>
         {state.stage.name}
         {state.round ? (state.round.kind === 'bonus' ? ' · Bonus' : ` · Song ${state.round.index}`) : ''}
       </span>
@@ -247,7 +247,7 @@ function InGame({ state, emit, serverNow, toast }: { state: PlayerState; emit: R
           </div>
           <div className="tl">
             {me.timeline.map((c, i) => (
-              <TimelineRow key={i} card={c} highlight={!!r?.song && c.songId !== null && c.title === r.song.title && c.year === r.song.year && state.phase === 'scoreboard'} />
+              <TimelineRow key={i} card={c} color={songCardIndexes(me.timeline)[i]} highlight={!!r?.song && c.songId !== null && c.title === r.song.title && c.year === r.song.year && state.phase === 'scoreboard'} />
             ))}
           </div>
         </div>
@@ -422,7 +422,7 @@ function AnswerForm({ state, emit, serverNow, toast }: { state: PlayerState; emi
               {Array.from({ length: timeline.length + 1 }).map((_, i) => (
                 <div key={i} style={{ display: 'grid', gap: 10 }}>
                   <Slot index={i} active={dragging || position === null} filled={position === i} onTap={() => place(i)} />
-                  {i < timeline.length && <TimelineRow card={timeline[i]} />}
+                  {i < timeline.length && <TimelineRow card={timeline[i]} color={songCardIndexes(timeline)[i]} />}
                 </div>
               ))}
               <div className="muted" style={{ fontSize: 12, fontWeight: 600 }}>▼ newer</div>

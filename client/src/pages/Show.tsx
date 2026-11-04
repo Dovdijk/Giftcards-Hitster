@@ -4,7 +4,7 @@ import QRCode from 'qrcode';
 import type { PublicState, TeamPublic, TimelineCard } from '../../../shared/types';
 import { useCountdown, useGameSocket } from '../socket';
 import { Avatar, Ring, Vinyl, Wordmark } from '../components/common';
-import { GiftCard, Medals, Shapes, TeamCard } from '../components/giftcard';
+import { GiftCard, Medals, Shapes, TeamCard, songCardIndexes } from '../components/giftcard';
 import Intro from '../components/Intro';
 
 /** Fixed 1920x1080 stage, scaled to whatever screen it's on. */
@@ -232,6 +232,7 @@ function Reveal({ s }: { s: PublicState }) {
 }
 
 function Track({ team, target, cardW, highlight }: { team: TeamPublic; target: number; cardW: number; highlight?: (c: TimelineCard) => boolean }) {
+  const colors = songCardIndexes(team.timeline);
   return (
     <div className="grow" style={{ position: 'relative', height: cardW / 1.586 + 10, minWidth: 0 }}>
       <div style={{ position: 'absolute', left: 0, right: 0, top: '50%', height: 5, marginTop: -2.5, borderRadius: 5, background: 'linear-gradient(90deg, var(--pink), var(--rose), var(--sky))', opacity: 0.85 }} />
@@ -240,7 +241,7 @@ function Track({ team, target, cardW, highlight }: { team: TeamPublic; target: n
           const c = team.timeline[k];
           if (!c) return <div key={k} style={{ width: 16, height: 16, borderRadius: '50%', background: 'var(--navy-2)', border: '3px solid rgba(255,255,255,0.35)' }} />;
           const hl = highlight?.(c);
-          return <GiftCard key={k} year={c.year} start={c.songId === null} width={cardW} glow={hl} className={hl ? 'pop' : undefined} style={{ fontSize: cardW / 8, animationDelay: '0.6s' }} />;
+          return <GiftCard key={k} year={c.year} start={c.songId === null} color={colors[k]} width={cardW} glow={hl} className={hl ? 'pop' : undefined} style={{ fontSize: cardW / 8, animationDelay: '0.6s' }} />;
         })}
       </div>
     </div>

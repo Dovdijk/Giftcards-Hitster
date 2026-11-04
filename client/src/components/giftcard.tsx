@@ -2,21 +2,25 @@ import type { CSSProperties, ReactNode } from 'react';
 import type { TeamPublic, TimelineCard } from '../../../shared/types';
 import { photoUrl } from '../socket';
 
-/** Colour per decade, so a timeline reads like a stack of different gift cards. */
-const decade: [number, string, string][] = [
-  [1960, '#c9b8ff', '#8a6cff'],
-  [1970, '#f7a1c4', '#e2569a'],
-  [1980, '#ffd66b', '#f5a524'],
-  [1990, '#ff8f6b', '#ff5a4a'],
-  [2000, '#7fd0ea', '#2f8fdc'],
-  [2010, '#b18cff', '#6a2fe6'],
-  [2020, '#6fe3b4', '#1fae84'],
-  [9999, '#ff9ad5', '#c23cee'],
+/** Card colours in timeline order: 1st song card magenta, 2nd blue, 3rd coral, … */
+export const CARD_COLORS: [string, string][] = [
+  ['#ff9ad5', '#c23cee'], // magenta
+  ['#7fd0ea', '#2f8fdc'], // blue
+  ['#ff8f6b', '#ff5a4a'], // coral
+  ['#ffd66b', '#f5a524'], // yellow
+  ['#6fe3b4', '#1fae84'], // green
+  ['#b18cff', '#6a2fe6'], // purple
+  ['#f7a1c4', '#e2569a'], // pink
+  ['#5eead4', '#0d9488'], // teal
+  ['#ffb86b', '#f97316'], // orange
+  ['#c9b8ff', '#8a6cff'], // lavender
 ];
-export function cardColors(year: number | null | undefined): [string, string] {
-  if (!year) return ['#ff8a5c', '#ff5a4a'];
-  const d = decade.find(([y]) => year < y) ?? decade[decade.length - 1];
-  return [d[1], d[2]];
+export const colorAt = (i: number): [string, string] => CARD_COLORS[((i % CARD_COLORS.length) + CARD_COLORS.length) % CARD_COLORS.length];
+
+/** Position of each song card among the song cards of a timeline (start cards get -1). */
+export function songCardIndexes(timeline: { songId: string | null }[]) {
+  let n = 0;
+  return timeline.map((c) => (c.songId === null ? -1 : n++));
 }
 
 function Bow() {
@@ -37,6 +41,7 @@ export interface GiftCardProps {
   cover?: string | null;
   caption?: ReactNode;
   width: number | string;
+  color?: number; // index into CARD_COLORS
   glow?: boolean;
   dashed?: boolean;
   className?: string;
@@ -44,9 +49,9 @@ export interface GiftCardProps {
 }
 
 /** A gift-card shaped tile: credit card ratio, ribbon, bow and a small wordmark. */
-export function GiftCard({ year, start, mystery, cover, caption, width, glow, dashed, className, style }: GiftCardProps) {
+export function GiftCard({ year, start, mystery, cover, caption, width, color, glow, dashed, className, style }: GiftCardProps) {
   if (dashed) return <div className={`gc gc-empty ${className ?? ''}`} style={{ width, ...style }} />;
-  const [c1, c2] = start ? ['#ffffff', '#ece6ff'] : mystery ? ['#ff8a5c', '#ff4f5e'] : cardColors(typeof year === 'number' ? year : null);
+  const [c1, c2] = start ? ['#ffffff', '#ece6ff'] : mystery ? ['#ff8a5c', '#ff4f5e'] : colorAt(color ?? 0);
   return (
     <div
       className={`gc${start ? ' gc-start' : ''}${glow ? ' gc-glow' : ''} ${className ?? ''}`}
@@ -67,7 +72,7 @@ export function GiftCard({ year, start, mystery, cover, caption, width, glow, da
 /** Team photo as a personal gift card. */
 export function TeamCard({ team, width, rank, highlight }: { team: Pick<TeamPublic, 'id' | 'name' | 'photoVersion'>; width: number; rank?: number; highlight?: boolean }) {
   const url = photoUrl(team.id, team.photoVersion);
-  const [c1, c2] = cardColors(1960 + ([...team.id].reduce((a, c) => a + c.charCodeAt(0), 0) % 7) * 10);
+  const [c1, c2] = colorAt([...team.id].reduce((a, c) => a + c.charCodeAt(0), 0));
   return (
     <div className={`gc gc-team${highlight ? ' gc-glow' : ''}`} style={{ width, background: `linear-gradient(135deg, ${c1}, ${c2})` }}>
       {url ? <img className="gc-photo" src={url} alt="" /> : <div className="gc-initial">{team.name.slice(0, 1).toUpperCase()}</div>}
@@ -101,11 +106,11 @@ export function Shapes({ count = 18, seed = 1, opacity = 0.5 }: { count?: number
 }
 
 /** Vertical timeline row for the phone: dot on the line, gift card, song info. */
-export function TimelineRow({ card, highlight }: { card: TimelineCard; highlight?: boolean }) {
+export function TimelineRow({ card, color, highlight }: { card: TimelineCard; color: number; highlight?: boolean }) {
   return (
     <div className={`tl-row${highlight ? ' pop' : ''}`}>
       <div className="tl-dot" />
-      <GiftCard year={card.year} start={card.songId === null} width={104} glow={highlight} />
+      <GiftCard year={card.year} start={card.songId === null} color={color} width={104} glow={highlight} />
       <div className="tl-info">
         {card.songId === null ? (
           <><b>Start year</b><span>Your first card</span></>

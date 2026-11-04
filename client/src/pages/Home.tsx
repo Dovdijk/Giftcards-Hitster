@@ -34,9 +34,9 @@ export default function Home() {
           <Link to="/host" className="btn small ghost">Host login</Link>
         </div>
         <div className="row" style={{ justifyContent: 'center', margin: '28px 0 6px', gap: 0, minWidth: 0 }}>
-          <GiftCard year={1987} width={118} style={{ transform: 'rotate(-10deg) translateX(18px)' }} />
+          <GiftCard year={1987} color={0} width={118} style={{ transform: 'rotate(-10deg) translateX(18px)' }} />
           <GiftCard mystery width={140} style={{ zIndex: 1, transform: 'translateY(-10px)' }} />
-          <GiftCard year={2004} width={118} style={{ transform: 'rotate(10deg) translateX(-18px)' }} />
+          <GiftCard year={2004} color={1} width={118} style={{ transform: 'rotate(10deg) translateX(-18px)' }} />
         </div>
         <h1 style={{ fontSize: 46, margin: '10px 0 0', lineHeight: 1 }}>
           Hitster <span className="accent">Night!</span>

@@ -40,8 +40,8 @@ export default function Intro({ target, seconds, winBonus, rounds, startYears }:
   );
 }
 
-function Card({ year, start, style, className, width = 250 }: { year: number | string; start?: boolean; style?: React.CSSProperties; className?: string; width?: number }) {
-  return <GiftCard year={year} start={start} mystery={year === '?'} width={width} className={className} style={{ fontSize: 26, ...style }} />;
+function Card({ year, start, style, className, width = 250, color }: { year: number | string; start?: boolean; style?: React.CSSProperties; className?: string; width?: number; color?: number }) {
+  return <GiftCard year={year} start={start} mystery={year === '?'} color={color} width={width} className={className} style={{ fontSize: 26, ...style }} />;
 }
 
 function Cards({ years, pop, start }: { years: number[]; pop?: number; start?: boolean }) {
@@ -49,7 +49,7 @@ function Cards({ years, pop, start }: { years: number[]; pop?: number; start?: b
     <div className="row" style={{ gap: 14, position: 'relative' }}>
       <div style={{ position: 'absolute', left: -30, right: -30, top: '50%', height: 6, borderRadius: 6, background: 'linear-gradient(90deg, var(--pink), var(--rose), var(--sky))' }} />
       {years.map((y, k) => (
-        <Card key={k} width={years.length > 2 ? 190 : years.length === 2 ? 260 : 300} year={y} start={start || y === 1987} className={k === pop ? 'pop' : undefined} style={k === pop ? { outline: '6px solid var(--mint)', animationDelay: '0.9s' } : undefined} />
+        <Card key={k} color={k - years.slice(0, k).filter((x) => start || x === 1987).length} width={years.length > 2 ? 190 : years.length === 2 ? 260 : 300} year={y} start={start || y === 1987} className={k === pop ? 'pop' : undefined} style={k === pop ? { outline: '6px solid var(--mint)', animationDelay: '0.9s' } : undefined} />
       ))}
     </div>
   );
