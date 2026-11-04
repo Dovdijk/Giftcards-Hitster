@@ -104,16 +104,6 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
     }
   };
 
-  async function playAndStart() {
-    if (!turnKey) return;
-    player.current?.play();
-    startedFor.current = turnKey;
-    await act('startRound');
-    setTimeout(() => {
-      if (phaseRef.current === 'playing' && pbRef.current && !pbRef.current.playing) show('Music not playing? Click the green play button in the Spotify player.');
-    }, 2500);
-  }
-
   const players = s.teams.filter((t) => r?.participants.includes(t.id));
   const lastStage = s.stage.index >= s.stage.count - 1;
   const nextLabel = s.pendingBonus.length ? '⭐ Start bonus song' : ['intro', 'stageIntro'].includes(s.phase) ? `▶ Load first song of ${s.stage.name}` : '▶ Load next song';
@@ -135,8 +125,10 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
             {['intro', 'stageIntro', 'scoreboard'].includes(s.phase) && <button className="btn big" onClick={() => act('nextSong')}>{nextLabel}</button>}
             {s.phase === 'ready' && (
               <>
-                <button className="btn mint big" onClick={playAndStart}>▶ Play & start timer</button>
-                <button className="btn small secondary" onClick={() => act('startRound')}>Start timer only</button>
+                <div className="pill ok" style={{ whiteSpace: 'normal', padding: '12px 14px', fontSize: 15, lineHeight: 1.35 }}>
+                  ▶ Press the green play button in the Spotify player below. The timer starts automatically.
+                </div>
+                <button className="btn small secondary" onClick={() => act('startRound')}>Start timer only (song not on Spotify)</button>
               </>
             )}
             {s.phase === 'playing' && (
@@ -170,7 +162,15 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
         </div>
         <div style={{ display: nowPlaying?.spotifyId ? 'block' : 'none' }}>
           <SpotifyPlayer ref={player} trackId={nowPlaying?.spotifyId ?? null} startAt={isMusic ? music!.startAt : 0} autoplay={isMusic} onPlayback={onPlayback} />
-          {preview && <div className="pill warn" style={{ marginTop: 6, whiteSpace: 'normal' }}>Preview mode (30 sec). Log in to Spotify Premium in this browser for full songs.</div>}
+          {preview && (
+            <div className="panel stack" style={{ marginTop: 8, padding: 14, gap: 6, border: '2px solid var(--yellow)', fontSize: 14 }}>
+              <b style={{ color: 'var(--yellow)' }}>Spotify plays a 30 sec preview</b>
+              <span>1. Use Chrome or Edge on the laptop (not incognito).</span>
+              <span>2. Log in at <a href="https://open.spotify.com" target="_blank" rel="noreferrer" style={{ fontWeight: 700 }}>open.spotify.com</a> with a Premium account in this same browser.</span>
+              <span>3. Allow third-party cookies for this site: click the icon left of the address bar → Cookies / Third-party cookies → Allow. Then reload this page.</span>
+              <span>4. Start songs with the green play button inside the Spotify player.</span>
+            </div>
+          )}
           {isMusic && <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Not playing? Press play in the player once; the browser sometimes blocks autoplay.</div>}
         </div>
         {nowPlaying && !nowPlaying.spotifyId && !isMusic && <div className="panel muted" style={{ padding: 14 }}>No Spotify link for this song. Play it manually, then press “Start timer only”.</div>}
