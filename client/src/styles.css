@@ -1,27 +1,32 @@
 /* giftcards.group style: deep navy, white wordmark, playful accents.
    Swap the accent values below once we have the official palette. */
 :root {
+  /* giftcardsgroup.com: navy to purple, coral "surprise" accent */
   --navy: #000749;
-  --navy-2: #0b1466;
-  --navy-3: #18238a;
+  --navy-2: #120a6b;
+  --navy-3: #2a1394;
+  --purple: #5a10c8;
   --ink: #ffffff;
-  --muted: #aab0e6;
-  --pink: #ff5c8a;
-  --yellow: #ffd23f;
+  --muted: #b9b4ec;
+  --pink: #ff6a4d; /* primary (coral) */
+  --rose: #f7a1c4;
+  --yellow: #ffd66b;
   --mint: #3ee0a1;
-  --sky: #5cc8ff;
-  --red: #ff6b6b;
+  --sky: #7fd0ea;
+  --red: #ff5a6a;
   --card: rgba(255, 255, 255, 0.07);
-  --card-strong: rgba(255, 255, 255, 0.12);
-  --line: rgba(255, 255, 255, 0.14);
-  --radius: 18px;
-  --font: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --card-strong: rgba(255, 255, 255, 0.13);
+  --line: rgba(255, 255, 255, 0.16);
+  --radius: 20px;
+  --font: 'Poppins', system-ui, sans-serif;
+  --bg: linear-gradient(115deg, #000749 0%, #0e0a63 45%, #3a0bb0 85%, #5a10c8 100%);
 }
 
 * { box-sizing: border-box; }
-html, body, #root { height: 100%; margin: 0; }
+html, body, #root { min-height: 100%; height: 100%; margin: 0; }
+html { background: #0e0a63; }
 body {
-  background: var(--navy);
+  background: var(--bg) fixed;
   color: var(--ink);
   font-family: var(--font);
   -webkit-font-smoothing: antialiased;
@@ -30,9 +35,10 @@ body {
 button, input, select, textarea { font: inherit; color: inherit; }
 img { display: block; }
 
-.wordmark { font-weight: 800; letter-spacing: -0.02em; }
-.wordmark .dot { color: var(--pink); }
-.accent { font-style: italic; color: var(--yellow); }
+.wordmark { font-weight: 700; letter-spacing: -0.03em; display: inline-flex; flex-direction: column; line-height: 0.9; }
+.wordmark small { align-self: flex-end; font-size: 0.42em; font-weight: 500; letter-spacing: 0.08em; }
+.accent { color: var(--pink); }
+h1, h2, .heading { font-weight: 800; letter-spacing: -0.03em; }
 
 .btn {
   border: 0;
@@ -49,7 +55,7 @@ img { display: block; }
 .btn:active { transform: scale(0.97); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 .btn.secondary { background: var(--card-strong); }
-.btn.ghost { background: transparent; border: 1.5px solid var(--line); }
+.btn.ghost { background: transparent; border: 2px solid rgba(255,255,255,0.85); }
 .btn.mint { background: var(--mint); color: var(--navy); }
 .btn.yellow { background: var(--yellow); color: var(--navy); }
 .btn.danger { background: var(--red); }
@@ -120,3 +126,51 @@ label.field { display: grid; gap: 6px; font-size: 0.85rem; color: var(--muted); 
 @keyframes pulse { 50% { transform: scale(1.06); } }
 .pop { animation: pop 0.5s ease both; }
 .fadeup { animation: fadeUp 0.5s ease both; }
+
+/* ---------- background shapes ---------- */
+.shapes { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 0; }
+.shapes svg { position: absolute; transform: rotate(var(--r)); animation: floaty ease-in-out infinite alternate; }
+@keyframes floaty { from { transform: translateY(0) rotate(var(--r)); } to { transform: translateY(-14px) rotate(calc(var(--r) + 25deg)); } }
+
+/* ---------- gift card ---------- */
+.gc {
+  position: relative; aspect-ratio: 1.586; border-radius: 8% / 12.7%; overflow: hidden; flex: none;
+  container-type: inline-size; color: #fff;
+  box-shadow: 0 0.6em 1.4em rgba(4, 0, 40, 0.45), inset 0 0 0 1px rgba(255,255,255,0.25);
+}
+.gc::after { content: ''; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,0.28) 48%, transparent 60%); pointer-events: none; }
+.gc-ribbon-v { position: absolute; top: 0; bottom: 0; left: 72%; width: 8%; background: rgba(255,255,255,0.32); }
+.gc-ribbon-h { position: absolute; left: 0; right: 0; top: 28%; height: 11%; background: rgba(255,255,255,0.32); }
+.gc-bow { position: absolute; left: 66%; top: 19%; width: 20%; }
+.gc-mark { position: absolute; left: 7%; top: 7%; font-size: 9cqw; font-weight: 700; letter-spacing: -0.03em; opacity: 0.9; }
+.gc-mark span { color: var(--navy); }
+.gc-year { position: absolute; left: 7%; bottom: 5%; font-size: 27cqw; font-weight: 800; letter-spacing: -0.04em; line-height: 1; text-shadow: 0 2px 8px rgba(0,0,0,0.18); }
+.gc-caption { position: absolute; left: 7%; right: 7%; bottom: 33%; font-size: 7cqw; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gc-cover { position: absolute; right: 6%; bottom: 8%; width: 30%; aspect-ratio: 1; border-radius: 10%; object-fit: cover; box-shadow: 0 4px 12px rgba(0,0,0,0.35); }
+.gc-start { color: var(--navy); }
+.gc-start .gc-ribbon-v, .gc-start .gc-ribbon-h { background: rgba(255,106,77,0.75); }
+.gc-start .gc-bow ellipse, .gc-start .gc-bow path { fill: #ff6a4d; stroke: #ff6a4d; }
+.gc-start .gc-bow circle { fill: #ff8a5c; }
+.gc-start .gc-mark span { color: var(--pink); }
+.gc-tag { position: absolute; right: 6%; bottom: 7%; font-size: 7cqw; font-weight: 800; background: var(--navy); color: #fff; padding: 1.5cqw 3cqw; border-radius: 3cqw; letter-spacing: 0.05em; }
+.gc-glow { box-shadow: 0 0 0 3px #fff, 0 0 30px 6px rgba(255,214,107,0.7); }
+.gc-empty { background: transparent; border: 2px dashed rgba(255,255,255,0.22); box-shadow: none; }
+.gc-empty::after { display: none; }
+.gc-team .gc-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.gc-team .gc-initial { position: absolute; inset: 0; display: grid; place-items: center; font-size: 34cqw; font-weight: 800; color: rgba(255,255,255,0.9); }
+.gc-team-name { position: absolute; left: 0; right: 0; bottom: 0; padding: 14cqw 6% 5%; font-size: 9cqw; font-weight: 800; background: linear-gradient(transparent, rgba(0,7,73,0.85)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gc-team .gc-mark { text-shadow: 0 1px 4px rgba(0,0,0,0.5); }
+.gc-rank { position: absolute; right: 5%; top: 6%; background: var(--yellow); color: var(--navy); font-weight: 800; font-size: 9cqw; padding: 1cqw 4cqw; border-radius: 99px; }
+
+/* ---------- vertical timeline (phone) ---------- */
+.tl { position: relative; display: grid; gap: 10px; padding-left: 26px; }
+.tl::before { content: ''; position: absolute; left: 8px; top: 6px; bottom: 6px; width: 4px; border-radius: 4px; background: linear-gradient(var(--pink), var(--rose), var(--sky)); }
+.tl-row { position: relative; display: flex; align-items: center; gap: 12px; }
+.tl-dot { position: absolute; left: -25px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 4px rgba(255,255,255,0.18); }
+.tl-info { display: grid; min-width: 0; line-height: 1.25; }
+.tl-info b { font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-info span { font-size: 0.82rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-slot { position: relative; height: 30px; border-radius: 14px; display: grid; place-items: center; font-size: 0.78rem; font-weight: 600; color: var(--muted); border: 2px dashed rgba(255,255,255,0.22); transition: all 0.15s; cursor: pointer; }
+.tl-slot::before { content: '+'; position: absolute; left: -31px; width: 20px; height: 20px; border-radius: 50%; background: var(--navy-3); border: 2px solid rgba(255,255,255,0.5); display: grid; place-items: center; font-weight: 800; color: #fff; line-height: 1; }
+.tl-slot.big { height: 48px; }
+.tl-slot.over { border-color: var(--mint); background: rgba(62,224,161,0.14); color: var(--mint); }

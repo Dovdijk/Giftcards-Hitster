@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Vinyl, Wordmark } from './common';
+import { GiftCard } from './giftcard';
 
 /** Looping explanation shown on the big screen before the first song. */
 export default function Intro({ target, seconds }: { target: number; seconds: number }) {
@@ -38,19 +39,16 @@ export default function Intro({ target, seconds }: { target: number; seconds: nu
   );
 }
 
-function Card({ year, start, style, className }: { year: number | string; start?: boolean; style?: React.CSSProperties; className?: string }) {
-  return (
-    <div className={className} style={{ width: 170, height: 230, borderRadius: 22, background: start ? 'var(--yellow)' : '#fff', color: 'var(--navy)', display: 'grid', placeItems: 'center', fontSize: 52, fontWeight: 800, boxShadow: '0 20px 50px rgba(0,0,0,0.4)', ...style }}>
-      {year}
-    </div>
-  );
+function Card({ year, start, style, className, width = 250 }: { year: number | string; start?: boolean; style?: React.CSSProperties; className?: string; width?: number }) {
+  return <GiftCard year={year} start={start} mystery={year === '?'} width={width} className={className} style={{ fontSize: 26, ...style }} />;
 }
 
 function Cards({ years, pop }: { years: number[]; pop?: number }) {
   return (
-    <div className="row" style={{ gap: 18 }}>
+    <div className="row" style={{ gap: 14, position: 'relative' }}>
+      <div style={{ position: 'absolute', left: -30, right: -30, top: '50%', height: 6, borderRadius: 6, background: 'linear-gradient(90deg, var(--pink), var(--rose), var(--sky))' }} />
       {years.map((y, k) => (
-        <Card key={k} year={y} start={y === 1987} className={k === pop ? 'pop' : undefined} style={k === pop ? { outline: '6px solid var(--mint)', animationDelay: '0.9s' } : undefined} />
+        <Card key={k} width={years.length > 1 ? 190 : 300} year={y} start={y === 1987} className={k === pop ? 'pop' : undefined} style={k === pop ? { outline: '6px solid var(--mint)', animationDelay: '0.9s' } : undefined} />
       ))}
     </div>
   );
@@ -59,14 +57,14 @@ function Cards({ years, pop }: { years: number[]; pop?: number }) {
 function DragDemo() {
   return (
     <div style={{ position: 'relative', width: 620, height: 420 }}>
-      <style>{`@keyframes dragIn { 0%,15% { transform: translate(225px, -10px) rotate(-6deg) } 55%,100% { transform: translate(225px, 190px) rotate(0) } }
+      <style>{`@keyframes dragIn { 0%,15% { transform: translate(185px, -10px) rotate(-6deg) } 55%,100% { transform: translate(185px, 230px) rotate(0) } }
                @keyframes makeRoom { 0%,40% { transform: translateX(0) } 60%,100% { transform: translateX(-110px) } }
                @keyframes makeRoomR { 0%,40% { transform: translateX(0) } 60%,100% { transform: translateX(110px) } }`}</style>
-      <div className="row" style={{ position: 'absolute', top: 190, left: 0, right: 0, justifyContent: 'center', gap: 50 }}>
+      <div className="row" style={{ position: 'absolute', top: 230, left: 0, right: 0, justifyContent: 'center', gap: 50 }}>
         <Card year={1987} start style={{ animation: 'makeRoom 3s ease infinite alternate' }} />
         <Card year={2004} style={{ animation: 'makeRoomR 3s ease infinite alternate' }} />
       </div>
-      <Card year="?" style={{ position: 'absolute', left: 0, top: 0, background: 'var(--pink)', color: '#fff', animation: 'dragIn 3s ease infinite alternate' }} />
+      <Card year="?" style={{ position: 'absolute', left: 0, top: 0, animation: 'dragIn 3s ease infinite alternate' }} />
     </div>
   );
 }

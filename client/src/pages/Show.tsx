@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import QRCode from 'qrcode';
-import type { PublicState, TeamPublic } from '../../../shared/types';
+import type { PublicState, TeamPublic, TimelineCard } from '../../../shared/types';
 import { useCountdown, useGameSocket } from '../socket';
-import { Avatar, Ring, Vinyl, Wordmark, YearCard } from '../components/common';
+import { Avatar, Ring, Vinyl, Wordmark } from '../components/common';
+import { GiftCard, Shapes, TeamCard } from '../components/giftcard';
 import Intro from '../components/Intro';
 
 /** Fixed 1920x1080 stage, scaled to whatever screen it's on. */
@@ -19,10 +20,11 @@ function Stage({ children }: { children: React.ReactNode }) {
       <div
         style={{
           width: 1920, height: 1080, transform: `scale(${scale})`, flex: 'none', position: 'relative', overflow: 'hidden',
-          background: 'radial-gradient(1200px 700px at 85% -10%, rgba(255,92,138,0.22), transparent 60%), radial-gradient(900px 600px at -10% 110%, rgba(92,200,255,0.18), transparent 60%), var(--navy)',
+          background: 'var(--bg)',
         }}
       >
-        {children}
+        <Shapes count={22} seed={7} opacity={0.45} />
+        <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>{children}</div>
       </div>
     </div>
   );
@@ -76,7 +78,7 @@ function Lobby({ s }: { s: PublicState }) {
       <TopBar s={s} />
       <div style={{ position: 'absolute', top: 170, left: 64, width: 760 }}>
         <div style={{ fontSize: 120, fontWeight: 800, lineHeight: 0.95, letterSpacing: '-0.03em' }}>
-          Hitster<br /><span className="accent">Night</span>
+          Hitster<br /><span className="accent">Night!</span>
         </div>
         <p style={{ fontSize: 32, color: 'var(--muted)', marginTop: 28 }}>Scan the code with one phone per team, pick a name and take a team photo.</p>
         <div className="row" style={{ gap: 32, marginTop: 30 }}>
@@ -91,11 +93,10 @@ function Lobby({ s }: { s: PublicState }) {
         <div style={{ fontSize: 30, fontWeight: 800, marginBottom: 20 }}>
           {s.teams.length} team{s.teams.length === 1 ? '' : 's'} ready
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${s.teams.length > 12 ? 5 : 4}, 1fr)`, gap: s.teams.length > 12 ? 18 : 22 }}>
-          {s.teams.map((t) => (
-            <div key={t.id} className="center pop" style={{ gap: 10 }}>
-              <Avatar team={t} size={s.teams.length > 12 ? 112 : 130} />
-              <div style={{ fontWeight: 800, fontSize: 22, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: `repeat(${s.teams.length > 12 ? 5 : 4}, 1fr)`, gap: 18 }}>
+          {s.teams.map((t, i) => (
+            <div key={t.id} className="pop" style={{ animationDelay: `${(i % 5) * 60}ms`, transform: `rotate(${((i * 37) % 7) - 3}deg)` }}>
+              <TeamCard team={t} width={s.teams.length > 12 ? 172 : 214} />
             </div>
           ))}
         </div>
@@ -207,15 +208,11 @@ function Reveal({ s }: { s: PublicState }) {
     <>
       <TopBar s={s} />
       <div className="row pop" style={{ position: 'absolute', top: 110, left: 64, right: 64, gap: 40, height: 260 }}>
-        {song.coverUrl ? (
-          <img src={song.coverUrl} alt="" style={{ width: 260, height: 260, borderRadius: 24, boxShadow: '0 30px 80px rgba(0,0,0,0.5)' }} />
-        ) : (
-          <Vinyl size={260} />
-        )}
+        <GiftCard year={song.year} cover={song.coverUrl} width={410} style={{ transform: 'rotate(-4deg)', fontSize: 22 }} />
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 130, fontWeight: 800, lineHeight: 1, color: 'var(--yellow)' }}>{song.year}</div>
-          <div style={{ fontSize: 56, fontWeight: 800, marginTop: 10, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{song.title}</div>
-          <div style={{ fontSize: 40, color: 'var(--muted)', fontWeight: 600 }}>{song.artist}</div>
+          <div style={{ fontSize: 34, fontWeight: 700, color: 'var(--rose)' }}>The answer is…</div>
+          <div style={{ fontSize: 76, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05, marginTop: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{song.title}</div>
+          <div style={{ fontSize: 44, fontWeight: 600 }}>{song.artist} <span style={{ color: 'var(--yellow)' }}>· {song.year}</span></div>
         </div>
       </div>
       <AnswerGrid s={s} showResult top={410} />
@@ -223,54 +220,60 @@ function Reveal({ s }: { s: PublicState }) {
   );
 }
 
+function Track({ team, target, cardW, highlight }: { team: TeamPublic; target: number; cardW: number; highlight?: (c: TimelineCard) => boolean }) {
+  return (
+    <div className="grow" style={{ position: 'relative', height: cardW / 1.586 + 10, minWidth: 0 }}>
+      <div style={{ position: 'absolute', left: 0, right: 0, top: '50%', height: 5, marginTop: -2.5, borderRadius: 5, background: 'linear-gradient(90deg, var(--pink), var(--rose), var(--sky))', opacity: 0.85 }} />
+      <div style={{ position: 'absolute', inset: 0, display: 'grid', gridTemplateColumns: `repeat(${target}, 1fr)`, alignItems: 'center', justifyItems: 'center' }}>
+        {Array.from({ length: target }).map((_, k) => {
+          const c = team.timeline[k];
+          if (!c) return <div key={k} style={{ width: 16, height: 16, borderRadius: '50%', background: 'var(--navy-2)', border: '3px solid rgba(255,255,255,0.35)' }} />;
+          const hl = highlight?.(c);
+          return <GiftCard key={k} year={c.year} start={c.songId === null} width={cardW} glow={hl} className={hl ? 'pop' : undefined} style={{ fontSize: cardW / 8, animationDelay: '0.6s' }} />;
+        })}
+      </div>
+    </div>
+  );
+}
+
 function Scoreboard({ s }: { s: PublicState }) {
   const ranked = [...s.teams].sort((a, b) => b.timeline.length - a.timeline.length || b.points - a.points);
-  const half = Math.ceil(ranked.length / 2);
-  const cols = ranked.length > 8 ? [ranked.slice(0, half), ranked.slice(half)] : [ranked];
-  const rowH = Math.min(150, Math.floor(860 / Math.max(1, cols[0].length)) - 12);
+  const perPage = 10;
+  const pages = Math.max(1, Math.ceil(ranked.length / perPage));
+  const [page, setPage] = useState(0);
+  useEffect(() => {
+    if (pages < 2) return;
+    const t = setInterval(() => setPage((p) => (p + 1) % pages), 9000);
+    return () => clearInterval(t);
+  }, [pages]);
+  const p = Math.min(page, pages - 1);
+  const rows = ranked.slice(p * perPage, p * perPage + perPage);
   const target = s.settings.targetCards;
+  const rowH = Math.min(150, Math.floor((870 - (rows.length - 1) * 10) / Math.max(rows.length, 1)));
+  const cardW = Math.min(Math.round((rowH - 12) * 1.586), Math.floor(1260 / target) - 14);
+  const song = s.round?.song;
+  const isNew = (c: TimelineCard) => !!song && c.songId !== null && c.title === song.title && c.year === song.year;
   return (
     <>
-      <TopBar s={s} title={s.pendingBonus.length ? <span style={{ color: 'var(--yellow)' }}>{s.outcome?.message}</span> : 'Scoreboard'} />
-      <div style={{ position: 'absolute', top: 130, left: 64, right: 64, bottom: 40, display: 'grid', gridTemplateColumns: `repeat(${cols.length}, 1fr)`, gap: 30 }}>
-        {cols.map((col, ci) => (
-          <div key={ci} style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
-            {col.map((t, i) => {
-              const rank = ci * half + i + 1;
-              const tied = s.pendingBonus.includes(t.id);
-              const small = rowH < 90;
-              return (
-                <div key={t.id} className="panel row fadeup" style={{ height: rowH, padding: '0 18px', gap: 16, animationDelay: `${rank * 40}ms`, border: tied ? '2px solid var(--yellow)' : undefined }}>
-                  <div style={{ width: 40, fontSize: 28, fontWeight: 800, color: rank === 1 ? 'var(--yellow)' : 'var(--muted)' }}>{rank}</div>
-                  <Avatar team={t} size={small ? rowH - 22 : 76} />
-                  <div style={{ width: 230, minWidth: 0 }}>
-                    <div style={{ fontWeight: 800, fontSize: small ? 20 : 26, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</div>
-                    <div className="muted" style={{ fontSize: small ? 15 : 19, fontWeight: 700 }}>{t.points} pts · {t.timeline.length}/{target}</div>
-                  </div>
-                  <div className="row grow" style={{ gap: 6, minWidth: 0 }}>
-                    {Array.from({ length: target }).map((_, k) => {
-                      const c = t.timeline[k];
-                      return (
-                        <div
-                          key={k}
-                          style={{
-                            flex: 1, minWidth: 0, height: small ? rowH - 26 : 64, borderRadius: 10, display: 'grid', placeItems: 'center',
-                            fontWeight: 800, fontSize: cols.length > 1 ? 15 : 22,
-                            background: c ? (c.songId === null ? 'var(--yellow)' : '#fff') : 'rgba(255,255,255,0.06)',
-                            color: 'var(--navy)', border: c ? 'none' : '1.5px dashed rgba(255,255,255,0.18)',
-                          }}
-                          title={c?.title ?? ''}
-                        >
-                          {c?.year ?? ''}
-                        </div>
-                      );
-                    })}
-                  </div>
+      <TopBar s={s} title={s.pendingBonus.length ? <span style={{ color: 'var(--yellow)' }}>{s.outcome?.message}</span> : <>Score<span className="accent">board</span>{pages > 1 && <span className="muted" style={{ fontSize: 22 }}>  {p + 1}/{pages}</span>}</>} />
+      <div key={p} style={{ position: 'absolute', top: 140, left: 64, right: 64, bottom: 50, display: 'grid', gap: 10, alignContent: 'start' }}>
+        {rows.map((t, i) => {
+          const rank = p * perPage + i + 1;
+          const tied = s.pendingBonus.includes(t.id);
+          return (
+            <div key={t.id} className="row fadeup" style={{ height: rowH, gap: 22, padding: '0 22px', borderRadius: 22, animationDelay: `${i * 50}ms`, background: rank === 1 ? 'rgba(255,214,107,0.12)' : 'rgba(255,255,255,0.06)', border: tied ? '2px solid var(--yellow)' : '1px solid var(--line)' }}>
+              <div style={{ width: 54, fontSize: Math.min(40, rowH * 0.4), fontWeight: 800, color: rank === 1 ? 'var(--yellow)' : rank <= 3 ? '#fff' : 'var(--muted)' }}>{rank}</div>
+              <Avatar team={t} size={rowH - 18} />
+              <div style={{ width: 290, minWidth: 0 }}>
+                <div style={{ fontWeight: 800, fontSize: Math.min(30, rowH * 0.32), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</div>
+                <div style={{ fontSize: Math.min(22, rowH * 0.24), fontWeight: 700 }}>
+                  <span style={{ color: 'var(--yellow)' }}>{t.points} pts</span> <span className="muted">· {t.timeline.length}/{target} cards</span>
                 </div>
-              );
-            })}
-          </div>
-        ))}
+              </div>
+              <Track team={t} target={target} cardW={cardW} highlight={isNew} />
+            </div>
+          );
+        })}
       </div>
     </>
   );
@@ -280,7 +283,7 @@ function Confetti() {
   const pieces = useMemo(
     () => Array.from({ length: 90 }, (_, i) => ({
       left: Math.random() * 100, delay: Math.random() * 4, dur: 3 + Math.random() * 3,
-      color: ['#ff5c8a', '#ffd23f', '#3ee0a1', '#5cc8ff', '#fff'][i % 5], rot: Math.random() * 360, w: 10 + Math.random() * 12,
+      color: ['#ff6a4d', '#ffd66b', '#6fe3b4', '#7fd0ea', '#f7a1c4', '#fff'][i % 6], rot: Math.random() * 360, w: 10 + Math.random() * 12,
     })),
     [],
   );
@@ -301,14 +304,14 @@ function Finished({ s }: { s: PublicState }) {
       <Confetti />
       <TopBar s={s} />
       <div className="center" style={{ position: 'absolute', inset: 0, gap: 20, alignContent: 'center' }}>
-        <div style={{ fontSize: 60, fontWeight: 800 }} className="accent">And the winner is…</div>
+        <div style={{ fontSize: 56, fontWeight: 800 }}>And the winner is<span className="accent">…</span></div>
         {w && (
           <>
-            <div className="pop"><Avatar team={w} size={340} ring="var(--yellow)" /></div>
-            <div className="pop" style={{ fontSize: 110, fontWeight: 800, lineHeight: 1 }}>{w.name}</div>
+            <div className="pop" style={{ transform: 'rotate(-3deg)' }}><TeamCard team={w} width={520} highlight /></div>
+            <div className="pop" style={{ fontSize: 100, fontWeight: 800, lineHeight: 1, letterSpacing: '-0.03em' }}>{w.name}</div>
             <div style={{ fontSize: 32, color: 'var(--muted)' }}>{s.outcome?.message} · {w.points} pts</div>
-            <div className="row" style={{ gap: 8, marginTop: 10 }}>
-              {w.timeline.map((c, i) => <YearCard key={i} card={c} compact />)}
+            <div style={{ width: 1500 }}>
+              <Track team={w} target={Math.max(w.timeline.length, 1)} cardW={Math.min(130, Math.floor(1400 / Math.max(w.timeline.length, 1)) - 12)} />
             </div>
           </>
         )}

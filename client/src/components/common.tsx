@@ -5,12 +5,13 @@ import { photoUrl } from '../socket';
 export function Wordmark({ size = 22 }: { size?: number }) {
   return (
     <span className="wordmark" style={{ fontSize: size }}>
-      giftcards<span className="dot">.</span>group
+      giftcards
+      <small>.GROUP</small>
     </span>
   );
 }
 
-const palette = ['#ff5c8a', '#ffd23f', '#3ee0a1', '#5cc8ff', '#b28dff', '#ff9f43'];
+const palette = ['#ff6a4d', '#ffd66b', '#6fe3b4', '#7fd0ea', '#b18cff', '#f7a1c4'];
 export const teamColor = (id: string) => palette[[...id].reduce((a, c) => a + c.charCodeAt(0), 0) % palette.length];
 
 export function Avatar({ team, size = 48, ring }: { team: Pick<TeamPublic, 'id' | 'name' | 'photoVersion'>; size?: number; ring?: string }) {

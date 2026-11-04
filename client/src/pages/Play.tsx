@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import type { PlayerState, TimelineCard } from '../../../shared/types';
 import { useCountdown, useGameSocket } from '../socket';
-import { Avatar, Offline, Ring, Vinyl, Wordmark, YearCard, useToast } from '../components/common';
+import { Avatar, Offline, Ring, Vinyl, Wordmark, useToast } from '../components/common';
+import { GiftCard, Shapes, TeamCard, TimelineRow } from '../components/giftcard';
 
 const TOKEN_KEY = 'hitster-token';
 
@@ -59,7 +60,8 @@ export default function Play() {
   }
 
   return (
-    <div style={{ minHeight: '100%', maxWidth: 520, margin: '0 auto', padding: '16px 16px 120px' }}>
+    <div style={{ minHeight: '100%', maxWidth: 520, margin: '0 auto', padding: '16px 16px 120px', position: 'relative' }}>
+      <div style={{ position: 'fixed', inset: 0, zIndex: -1 }}><Shapes count={14} seed={4} opacity={0.35} /></div>
       <Offline connected={g.connected} />
       <div className="row" style={{ justifyContent: 'space-between', marginBottom: 14 }}>
         <Wordmark size={18} />
@@ -149,14 +151,12 @@ function Lobby({ state, token, emit, toast }: { state: PlayerState; token: strin
   return (
     <div className="stack fadeup">
       <div className="panel center stack" style={{ padding: 24 }}>
-        <div style={{ position: 'relative' }}>
-          <Avatar team={me} size={160} />
-        </div>
+        <TeamCard team={me} width={260} />
         <input ref={fileRef} type="file" accept="image/*" capture="user" hidden onChange={(e) => onPhoto(e.target.files?.[0])} />
         <button className="btn yellow" onClick={() => fileRef.current?.click()} disabled={uploading}>
           {uploading ? 'Uploading…' : me.photoVersion ? 'Retake team photo' : 'Take team photo'}
         </button>
-        {!me.photoVersion && <span className="muted" style={{ fontSize: 14 }}>Squeeze the whole team in! It shows up on the big screen.</span>}
+        <span className="muted" style={{ fontSize: 14 }}>{me.photoVersion ? 'This is your team card on the big screen.' : 'Squeeze the whole team in! It becomes your team card on the big screen.'}</span>
       </div>
       <form
         className="panel stack"
@@ -221,10 +221,15 @@ function InGame({ state, emit, serverNow, toast }: { state: PlayerState; emit: R
       )}
       {!playing && (
         <div className="panel stack">
-          <div style={{ fontWeight: 800 }}>Your timeline</div>
-          {me.timeline.map((c, i) => (
-            <YearCard key={i} card={c} />
-          ))}
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <div style={{ fontWeight: 800 }}>Your timeline</div>
+            <span className="pill">{me.timeline.length}/{state.settings.targetCards}</span>
+          </div>
+          <div className="tl">
+            {me.timeline.map((c, i) => (
+              <TimelineRow key={i} card={c} highlight={!!r?.song && c.songId !== null && c.title === r.song.title && c.year === r.song.year && state.phase === 'scoreboard'} />
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -270,10 +275,10 @@ function Draggable({ children }: { children: React.ReactNode }) {
 
 function MysteryCard() {
   return (
-    <div className="yearcard" style={{ background: 'var(--pink)', color: '#fff', justifyContent: 'center', boxShadow: '0 10px 30px rgba(255,92,138,0.45)' }}>
-      <span style={{ fontSize: 22 }}>♪</span>
-      <span>This song</span>
-      <span className="muted" style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, fontWeight: 600 }}>drag me</span>
+    <div className="tl-row" style={{ cursor: 'grab' }}>
+      <div className="tl-dot" style={{ background: 'var(--pink)', boxShadow: '0 0 0 5px rgba(255,106,77,0.3)' }} />
+      <GiftCard mystery width={104} style={{ boxShadow: '0 10px 26px rgba(255,90,74,0.55)' }} />
+      <div className="tl-info"><b>This song</b><span>Drag me to the right spot</span></div>
     </div>
   );
 }
@@ -290,22 +295,8 @@ function Slot({ index, active, filled, onTap }: { index: number; active: boolean
     );
   }
   return (
-    <div
-      ref={setNodeRef}
-      onClick={onTap}
-      style={{
-        height: active ? 46 : 26,
-        borderRadius: 12,
-        border: `2px dashed ${isOver ? 'var(--mint)' : 'rgba(255,255,255,0.22)'}`,
-        background: isOver ? 'rgba(62,224,161,0.15)' : 'transparent',
-        transition: 'all 0.15s',
-        display: 'grid',
-        placeItems: 'center',
-        fontSize: 12,
-        color: 'var(--muted)',
-      }}
-    >
-      {active ? 'drop here' : ''}
+    <div ref={setNodeRef} onClick={onTap} className={`tl-slot${active ? ' big' : ''}${isOver ? ' over' : ''}`}>
+      {active ? (isOver ? 'Drop it here!' : 'drop here') : ''}
     </div>
   );
 }
@@ -374,7 +365,7 @@ function AnswerForm({ state, emit, serverNow, toast }: { state: PlayerState; emi
         <Ring seconds={left} total={state.settings.roundSeconds} size={64} />
         <div className="grow">
           <div style={{ fontWeight: 800 }}>{bonus ? 'Bonus: guess the exact year' : 'Where does this song fit?'}</div>
-          <div className="muted" style={{ fontSize: 13 }}>{bonus ? 'Closest year wins.' : 'Drag the pink card into your timeline.'}</div>
+          <div className="muted" style={{ fontSize: 13 }}>{bonus ? 'Closest year wins.' : 'Drag the orange card into your timeline.'}</div>
         </div>
       </div>
 
@@ -400,18 +391,22 @@ function AnswerForm({ state, emit, serverNow, toast }: { state: PlayerState; emi
         <DndContext sensors={sensors} onDragStart={() => setDragging(true)} onDragEnd={onDragEnd} onDragCancel={() => setDragging(false)}>
           <div className="panel stack" style={{ gap: 8 }}>
             {position === null && (
-              <div style={{ marginBottom: 6 }}>
+              <div style={{ marginBottom: 8, paddingLeft: 26 }}>
                 <Draggable>
                   <MysteryCard />
                 </Draggable>
               </div>
             )}
-            {Array.from({ length: timeline.length + 1 }).map((_, i) => (
-              <div key={i} className="stack" style={{ gap: 8 }}>
-                <Slot index={i} active={dragging || position === null} filled={position === i} onTap={() => place(i)} />
-                {i < timeline.length && <YearCard card={timeline[i]} />}
-              </div>
-            ))}
+            <div className="tl">
+              <div className="muted" style={{ fontSize: 12, fontWeight: 600 }}>▲ older</div>
+              {Array.from({ length: timeline.length + 1 }).map((_, i) => (
+                <div key={i} style={{ display: 'grid', gap: 10 }}>
+                  <Slot index={i} active={dragging || position === null} filled={position === i} onTap={() => place(i)} />
+                  {i < timeline.length && <TimelineRow card={timeline[i]} />}
+                </div>
+              ))}
+              <div className="muted" style={{ fontSize: 12, fontWeight: 600 }}>▼ newer</div>
+            </div>
             <div className="muted" style={{ fontSize: 12, textAlign: 'center' }}>Tip: you can also tap a dashed spot.</div>
           </div>
         </DndContext>
@@ -459,7 +454,7 @@ function MyResult({ state }: { state: PlayerState }) {
   return (
     <div className="panel stack fadeup">
       <div className="row">
-        {song.coverUrl && <img src={song.coverUrl} alt="" style={{ width: 72, height: 72, borderRadius: 10 }} />}
+        <GiftCard year={song.year} cover={song.coverUrl} width={130} className="pop" />
         <div>
           <div style={{ fontWeight: 800, fontSize: 30 }}>{song.year}</div>
           <div style={{ fontWeight: 700 }}>{song.title}</div>
