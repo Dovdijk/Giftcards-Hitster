@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { GiftCard } from './giftcard';
 
 /** Deterministic pseudo random, so re-renders don't reshuffle the decoration. */
@@ -135,12 +136,14 @@ export function Burst() {
     const colors = ['#ff6a4d', '#ffd66b', '#6fe3b4', '#7fd0ea', '#f7a1c4', '#b18cff'];
     return Array.from({ length: 46 }, (_, i) => ({ bx: (r() - 0.5) * 520, by: -200 + r() * 700, br: r() * 900, color: colors[i % colors.length], delay: r() * 0.15 }));
   }, []);
-  return (
+  // portal: animated parents would otherwise clip the full-screen burst
+  return createPortal(
     <div className="burst" aria-hidden>
       {items.map((b, i) => (
         <i key={i} style={{ background: b.color, animationDelay: `${b.delay}s`, ['--bx' as any]: `${b.bx}px`, ['--by' as any]: `${b.by}px`, ['--br' as any]: `${b.br}deg` }} />
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }
 

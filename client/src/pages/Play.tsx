@@ -6,8 +6,23 @@ import { useCountdown, useGameSocket } from '../socket';
 import { Avatar, Offline, Ring, Vinyl, Wordmark, useToast } from '../components/common';
 import { GiftCard, Medals, Shapes, TeamCard, TimelineRow, songCardIndexes } from '../components/giftcard';
 import { Burst, vibrate } from '../components/fx';
+import { CameraCapture, prefersNativeCamera } from '../components/Camera';
 
 const tokenKey = (code: string) => `hitster-token-${code}`;
+
+/** Laptop-size screen: answer form in two columns. */
+function useWide() {
+  const q = '(min-width: 900px)';
+  const [wide, setWide] = useState(() => window.matchMedia?.(q).matches ?? false);
+  useEffect(() => {
+    const m = window.matchMedia?.(q);
+    if (!m) return;
+    const h = () => setWide(m.matches);
+    m.addEventListener('change', h);
+    return () => m.removeEventListener('change', h);
+  }, []);
+  return wide;
+}
 
 function readToken(code: string) {
   try {
@@ -40,6 +55,7 @@ export default function Play() {
   }, [g.tokenInvalid]);
 
   const s = g.state;
+  const wide = useWide();
   if (g.authError)
     return (
       <div className="center stack" style={{ height: '100%', padding: 24 }}>
@@ -71,7 +87,7 @@ export default function Play() {
   }
 
   return (
-    <div style={{ minHeight: '100%', maxWidth: 520, margin: '0 auto', padding: '16px 16px 120px', position: 'relative' }}>
+    <div style={{ minHeight: '100%', maxWidth: wide && s.phase === 'playing' && s.me ? 1080 : 520, margin: '0 auto', padding: '16px 16px 120px', position: 'relative', transition: 'max-width 0.3s' }}>
       <div style={{ position: 'fixed', inset: 0, zIndex: -1 }}><Shapes count={14} seed={4} opacity={0.35} /></div>
       <Offline connected={g.connected} />
       <div className="row" style={{ justifyContent: 'space-between', marginBottom: 14 }}>
@@ -139,12 +155,31 @@ function Lobby({ state, token, code, emit, toast }: { state: PlayerState; token:
   const [name, setName] = useState(me.name);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [camera, setCamera] = useState(false);
+
+  async function upload(dataUrl: string) {
+    setUploading(true);
+    try {
+      const res = await fetch(`/api/photo/${code}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-team-token': token },
+        body: JSON.stringify({ dataUrl }),
+      });
+      if (!res.ok) toast((await res.json().catch(() => ({}))).error ?? 'Upload failed');
+      else setCamera(false);
+    } catch {
+      toast('Upload failed. Try again.');
+    } finally {
+      setUploading(false);
+    }
+  }
 
   async function onPhoto(file: File | undefined) {
     if (!file) return;
     setUploading(true);
     try {
       const dataUrl = await resizeImage(file);
+      setCamera(false);
       const res = await fetch(`/api/photo/${code}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-team-token': token },
@@ -164,7 +199,8 @@ function Lobby({ state, token, code, emit, toast }: { state: PlayerState; token:
       <div className="panel center stack" style={{ padding: 24 }}>
         <TeamCard team={me} width={260} />
         <input ref={fileRef} type="file" accept="image/*" capture="user" hidden onChange={(e) => onPhoto(e.target.files?.[0])} />
-        <button className="btn yellow" onClick={() => fileRef.current?.click()} disabled={uploading}>
+        {camera && <CameraCapture onCapture={upload} onClose={() => setCamera(false)} onPickFile={() => fileRef.current?.click()} />}
+        <button className="btn yellow" onClick={() => (prefersNativeCamera() ? fileRef.current?.click() : setCamera(true))} disabled={uploading}>
           {uploading ? 'Uploading…' : me.photoVersion ? 'Retake team photo' : 'Take team photo'}
         </button>
         <span className="muted" style={{ fontSize: 14 }}>{me.photoVersion ? 'This is your team card on the big screen.' : 'Squeeze the whole team in! It becomes your team card on the big screen.'}</span>
@@ -334,6 +370,8 @@ function AnswerForm({ state, emit, serverNow, toast }: { state: PlayerState; emi
   const [dragging, setDragging] = useState(false);
   const locked = !!state.myAnswer?.confirmed;
   const left = useCountdown(r.endsAt, serverNow) ?? 0;
+  const wide = useWide();
+  const titleRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!locked && left > 0 && left <= 3) vibrate(40);
   }, [left, locked]);
@@ -373,6 +411,7 @@ function AnswerForm({ state, emit, serverNow, toast }: { state: PlayerState; emi
   }
 
   if (locked) {
+    // (hooks above this line only: the locked view returns early)
     const a = state.myAnswer!;
     return (
       <div className="stack">
@@ -389,9 +428,30 @@ function AnswerForm({ state, emit, serverNow, toast }: { state: PlayerState; emi
     );
   }
 
+  const canConfirm = bonus ? yearGuess.length === 4 : position !== null;
+  const answerFields = (
+    <div className="panel stack">
+      <label className="field">
+        <span>Artist <span style={{ fontWeight: 500 }}>(+100)</span></span>
+        <input className="input" value={artist} maxLength={80} autoComplete="off" onChange={(e) => { setArtist(e.target.value); sendDraft({ ...current(), artist: e.target.value }); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); titleRef.current?.focus(); } }} />
+      </label>
+      <label className="field">
+        <span>Title <span style={{ fontWeight: 500 }}>(+100)</span></span>
+        <input ref={titleRef} className="input" value={title} maxLength={80} autoComplete="off" onChange={(e) => { setTitle(e.target.value); sendDraft({ ...current(), title: e.target.value }); }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && wide && canConfirm) { e.preventDefault(); confirm(); } }} />
+      </label>
+      {wide && (
+        <>
+          <button className="btn mint big" disabled={!canConfirm} onClick={confirm}>Confirm answer</button>
+          <div className="muted" style={{ fontSize: 12, textAlign: 'center' }}>{canConfirm ? 'Press Enter in the title field to confirm.' : bonus ? 'Enter a year first.' : 'Drag the orange card into your timeline first.'}</div>
+        </>
+      )}
+    </div>
+  );
   return (
-    <div className="stack">
-      <div className="panel row" style={{ padding: 12 }}>
+    <div className="stack" style={wide ? { gridTemplateColumns: 'minmax(0, 1.15fr) minmax(0, 1fr)', alignItems: 'start', gap: 16 } : undefined}>
+      <div className="panel row" style={{ padding: 12, gridColumn: wide ? '1 / -1' : undefined }}>
         <Ring seconds={left} total={state.settings.roundSeconds} size={64} />
         <div className="grow">
           <div style={{ fontWeight: 800 }}>{bonus ? 'Bonus: guess the exact year' : 'Where does this song fit?'}</div>
@@ -437,30 +497,23 @@ function AnswerForm({ state, emit, serverNow, toast }: { state: PlayerState; emi
               ))}
               <div className="muted" style={{ fontSize: 12, fontWeight: 600 }}>▼ newer</div>
             </div>
-            <div className="muted" style={{ fontSize: 12, textAlign: 'center' }}>Tip: you can also tap a dashed spot.</div>
+            <div className="muted" style={{ fontSize: 12, textAlign: 'center' }}>{wide ? 'Tip: you can also click a dashed spot.' : 'Tip: you can also tap a dashed spot.'}</div>
           </div>
         </DndContext>
       )}
 
-      <div className="panel stack">
-        <label className="field">
-          <span>Artist <span style={{ fontWeight: 500 }}>(+100)</span></span>
-          <input className="input" value={artist} maxLength={80} autoComplete="off" onChange={(e) => { setArtist(e.target.value); sendDraft({ ...current(), artist: e.target.value }); }} />
-        </label>
-        <label className="field">
-          <span>Title <span style={{ fontWeight: 500 }}>(+100)</span></span>
-          <input className="input" value={title} maxLength={80} autoComplete="off" onChange={(e) => { setTitle(e.target.value); sendDraft({ ...current(), title: e.target.value }); }} />
-        </label>
-      </div>
+      {wide ? <div style={{ position: 'sticky', top: 16 }}>{answerFields}</div> : answerFields}
 
       {countdown}
-      <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, padding: 16, background: 'linear-gradient(transparent, var(--navy) 35%)' }}>
-        <div style={{ maxWidth: 520, margin: '0 auto' }}>
-          <button className="btn mint big" style={{ width: '100%' }} disabled={bonus ? yearGuess.length !== 4 : position === null} onClick={confirm}>
-            Confirm answer
-          </button>
+      {!wide && (
+        <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, padding: 16, background: 'linear-gradient(transparent, var(--navy) 35%)' }}>
+          <div style={{ maxWidth: 520, margin: '0 auto' }}>
+            <button className="btn mint big" style={{ width: '100%' }} disabled={!canConfirm} onClick={confirm}>
+              Confirm answer
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
