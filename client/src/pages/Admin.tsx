@@ -3,7 +3,7 @@ import { BONUS_LIST, MUSIC_LIST, PRACTICE_LIST, type AdminState, type Song, type
 import { useCountdown, useGameSocket } from '../socket';
 import { Avatar, Offline, Ring, Wordmark, useToast } from '../components/common';
 import { Link, useParams } from 'react-router-dom';
-import { SpotifyPlayer, type PlayerHandle, type PlaybackInfo } from '../components/SpotifyPlayer';
+import { SpotifyPlayer, spIframeAllow, spLog, spLogLines, useSpLog, type PlayerHandle, type PlaybackInfo } from '../components/SpotifyPlayer';
 import { Medals } from '../components/giftcard';
 
 type Emit = ReturnType<typeof useGameSocket>['emit'];
@@ -134,6 +134,7 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
       setTimeout(() => {
         const pb = pbRef.current;
         if (pb?.playing && (pb.trackId === id || pb.playingId === id)) return;
+        spLog(`autopilot: try ${i + 1} of 4`);
         if (i % 2) player.current?.resume();
         else player.current?.play();
       }, ms),
@@ -269,6 +270,7 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
               <span>4. Start songs with the green play button inside the Spotify player.</span>
             </div>
           )}
+          <SpotifyCheck player={player} />
           {isMusic && <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>Not playing? Press play in the player once; the browser sometimes blocks autoplay.</div>}
         </div>
         {nowPlaying && !nowPlaying.spotifyId && !isMusic && <div className="panel muted" style={{ padding: 14 }}>No Spotify link for this song. Play it manually, then press “Start timer only”.</div>}
@@ -882,5 +884,38 @@ function SettingsTab({ s, act }: { s: AdminState; act: Act }) {
         <button className="btn danger" onClick={() => confirm('Reset the game?') && act('resetGame')}>Reset game</button>
       </div>
     </div>
+  );
+}
+
+/** Troubleshooting panel: shows what the browser and the Spotify player did, and lets the host test autostart. */
+function SpotifyCheck({ player }: { player: React.RefObject<PlayerHandle | null> }) {
+  const lines = useSpLog();
+  const [copied, setCopied] = useState(false);
+  const [wait, setWait] = useState(0);
+  useEffect(() => {
+    if (!wait) return;
+    const t = setTimeout(() => {
+      if (wait === 1) {
+        spLog('test: start without a click (after 8 sec)');
+        player.current?.play();
+      }
+      setWait(wait - 1);
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [wait]);
+  const report = () =>
+    [`browser: ${navigator.userAgent}`, `player allow: ${spIframeAllow()}`, `page: ${location.host}`, ...spLogLines()].join('\n');
+  return (
+    <details style={{ marginTop: 8, fontSize: 13 }}>
+      <summary className="muted" style={{ cursor: 'pointer' }}>🔧 Spotify check</summary>
+      <div className="stack" style={{ gap: 8, marginTop: 8 }}>
+        <div className="row wrap" style={{ gap: 8 }}>
+          <button className="btn small secondary" onClick={() => { spLog('test: start with a click'); player.current?.play(); }}>Test 1: start with a click</button>
+          <button className="btn small secondary" disabled={!!wait} onClick={() => { player.current?.pause(); setWait(8); }}>{wait ? `Starting in ${wait}…` : 'Test 2: start by itself in 8 sec'}</button>
+          <button className="btn small secondary" onClick={() => navigator.clipboard?.writeText(report()).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); })}>{copied ? 'Copied ✓' : 'Copy log'}</button>
+        </div>
+        <pre style={{ margin: 0, maxHeight: 220, overflow: 'auto', background: 'rgba(0,0,0,0.3)', padding: 10, borderRadius: 8, fontSize: 11, whiteSpace: 'pre-wrap' }}>{lines.slice(-30).join('\n') || 'Nothing yet'}</pre>
+      </div>
+    </details>
   );
 }

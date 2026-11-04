@@ -36,6 +36,28 @@ function loadApi(): Promise<any> {
   return window.__spotifyIframeApi;
 }
 
+// ---- diagnostics: what happened between the app and the Spotify player (shown in "Spotify check") ----
+const logLines: string[] = [];
+const logSubs = new Set<() => void>();
+export function spLog(msg: string) {
+  const ua = (navigator as any).userActivation;
+  const act = ua ? ` [clicked:${ua.hasBeenActive ? 'y' : 'n'}${ua.isActive ? ',now' : ''}]` : '';
+  logLines.push(`${new Date().toLocaleTimeString('nl-NL')} ${msg}${act}`);
+  if (logLines.length > 80) logLines.shift();
+  logSubs.forEach((f) => f());
+}
+export const spLogLines = () => logLines;
+export function useSpLog() {
+  const [, set] = useState(0);
+  useEffect(() => {
+    const f = () => set((n) => n + 1);
+    logSubs.add(f);
+    return () => void logSubs.delete(f);
+  }, []);
+  return logLines;
+}
+export const spIframeAllow = () => document.querySelector('iframe[src*="open.spotify.com"]')?.getAttribute('allow') ?? '(no player)';
+
 export interface PlayerHandle {
   play(): void;
   resume(): void;
@@ -62,19 +84,27 @@ export const SpotifyPlayer = forwardRef<PlayerHandle, Props>(function SpotifyPla
   const ctrl = useRef<Controller | null>(null);
   const loaded = useRef<{ uri: string; startAt: number; seeked: boolean } | null>(null);
   const lastPos = useRef<number | null>(null);
+  const lastSig = useRef('');
   const cb = useRef(onPlayback);
   cb.current = onPlayback;
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
 
   useImperativeHandle(ref, () => ({
-    play: () => ctrl.current?.play(),
-    resume: () => ctrl.current?.resume(),
+    play: () => {
+      spLog(ctrl.current ? 'app: play()' : 'app: play() but player not ready');
+      ctrl.current?.play();
+    },
+    resume: () => {
+      spLog('app: resume()');
+      ctrl.current?.resume();
+    },
     pause: () => ctrl.current?.pause(),
   }));
 
   const load = (c: Controller, uri: string) => {
     loaded.current = { uri, startAt, seeked: startAt === 0 };
+    spLog(`load ${uri.split(':').pop()}${startAt ? ' from ' + startAt + 's' : ''}`);
     c.loadUri(uri, false, startAt);
     if (autoplay) setTimeout(() => ctrl.current?.play(), 700);
   };
@@ -110,6 +140,8 @@ export const SpotifyPlayer = forwardRef<PlayerHandle, Props>(function SpotifyPla
       api.createController(el, { uri, width: '100%', height: 152 }, (c: Controller) => {
         (document as any).createElement = origCreate;
         ctrl.current = c;
+        spLog(`player created, allow="${spIframeAllow()}"`);
+        c.addListener('ready', () => spLog('spotify: ready'));
         setReady(true);
         setFailed(false);
         loaded.current = { uri, startAt, seeked: startAt === 0 };
@@ -125,6 +157,11 @@ export const SpotifyPlayer = forwardRef<PlayerHandle, Props>(function SpotifyPla
             l.seeked = true;
           }
           // some embed versions keep isBuffering on while playing; a moving position also means playing
+          const sig = `${d.isPaused ? 'paused' : 'playing'}${d.isBuffering ? '+buffering' : ''} dur ${Math.round((d.duration ?? 0) / 1000)}s`;
+          if (sig !== lastSig.current) {
+            lastSig.current = sig;
+            spLog(`spotify: ${sig} at ${Math.round((d.position ?? 0) / 1000)}s`);
+          }
           const last = lastPos.current;
           const moving = last !== null && (d.position ?? 0) > last;
           lastPos.current = d.position ?? 0;
