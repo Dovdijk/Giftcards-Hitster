@@ -240,7 +240,7 @@ function Header({ state }: { state: PlayerState }) {
           <Medals wins={me.wins} size={20} />
         </div>
         <div className="muted" style={{ fontSize: 13 }}>
-          {me.timeline.length}/{state.settings.targetCards} cards · <b style={{ color: 'var(--yellow)' }}>{me.points} pts</b>
+          {me.timeline.length}/{state.settings.targetCards} cards · <b style={{ color: 'var(--yellow)' }}>{me.stagePoints} pts this round</b>
         </div>
       </div>
       <span className="pill" style={{ textAlign: 'center', lineHeight: 1.2, maxWidth: '42%', fontSize: 12, flex: 'none' }}>
