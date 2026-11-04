@@ -366,7 +366,7 @@ const STAGE_W = 1920 - 128; // usable width on the 1920 stage
 const LIST_H = 880; // usable height below the top bar
 
 /** Ranking and points of the previous scoreboard, to animate what changed. */
-let lastBoard: Record<string, { rank: number; points: number }> | null = null;
+let lastBoard: Record<string, { rank: number; points: number; stagePoints: number; stage: number }> | null = null;
 
 function Scoreboard({ s }: { s: PublicState }) {
   const ranked = [...s.teams].sort((a, b) => b.timeline.length - a.timeline.length || b.points - a.points);
@@ -379,8 +379,8 @@ function Scoreboard({ s }: { s: PublicState }) {
     return () => clearTimeout(t);
   }, []);
   useEffect(() => {
-    const snap: Record<string, { rank: number; points: number }> = {};
-    ranked.forEach((t, i) => (snap[t.id] = { rank: i + 1, points: t.points }));
+    const snap: NonNullable<typeof lastBoard> = {};
+    ranked.forEach((t, i) => (snap[t.id] = { rank: i + 1, points: t.points, stagePoints: t.stagePoints, stage: s.stage.index }));
     lastBoard = snap;
   });
   const perPage = 10;
@@ -406,6 +406,12 @@ function Scoreboard({ s }: { s: PublicState }) {
     if (!before) return { from: 0, delta: 0, points: t.points };
     const samePage = Math.floor((before.rank - 1) / perPage) === p;
     return { from: samePage ? (before.rank - rank) * (rowH + gap) : 0, delta: before.rank - rank, points: before.points };
+  };
+  // points this song: the growth of this round's points since the previous scoreboard
+  const gain = (t: TeamPublic) => {
+    const before = fresh && prev?.[t.id];
+    if (!before) return 0;
+    return before.stage === s.stage.index ? t.stagePoints - before.stagePoints : t.stagePoints;
   };
   const RankMove = ({ delta, size }: { delta: number; size: number }) =>
     delta ? <span className={`rank-move ${delta > 0 ? 'up' : 'down'}`} style={{ fontSize: size, marginLeft: size * 0.5 }}>{delta > 0 ? `▲${delta}` : `▼${-delta}`}</span> : null;
@@ -451,10 +457,7 @@ function Scoreboard({ s }: { s: PublicState }) {
                     </div>
                     <div style={{ fontSize: headerH * 0.2, fontWeight: 700 }} className="muted">{t.timeline.length}/{target} cards</div>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: headerH * 0.48, fontWeight: 800, color: 'var(--yellow)', lineHeight: 1 }}><CountUp from={move(t, rank).points} to={t.points} delay={1900} /></div>
-                    <div className="muted" style={{ fontSize: headerH * 0.16, fontWeight: 700 }}>points</div>
-                  </div>
+                  <ScoreBlock t={t} from={move(t, rank).points} gain={gain(t)} round={s.stage.index + 1} size={headerH} delay={i * 120} />
                 </div>
                 <Track team={t} target={target} cardW={cardW} highlight={fresh ? isNew : undefined} captions delay={i * 150} />
               </div>
@@ -489,8 +492,13 @@ function Scoreboard({ s }: { s: PublicState }) {
                   <Medals wins={t.wins} size={Math.min(40, rowH * 0.3)} />
                   <RankMove delta={move(t, rank).delta} size={Math.min(24, rowH * 0.18)} />
                 </div>
-                <div style={{ fontSize: Math.min(32, rowH * 0.24), fontWeight: 700 }}>
-                  <span style={{ color: 'var(--yellow)' }}><CountUp from={move(t, rank).points} to={t.points} delay={1900} /> pts</span> <span className="muted">· {t.timeline.length}/{target} cards</span>
+                <div className="row" style={{ gap: Math.min(12, rowH * 0.08), fontSize: Math.min(32, rowH * 0.24), fontWeight: 800, flexWrap: 'nowrap' }}>
+                  <span style={{ color: 'var(--yellow)', whiteSpace: 'nowrap' }}>
+                    <CountUp from={move(t, rank).points} to={t.points} delay={1900} />
+                    <span className="muted" style={{ fontSize: '0.5em', letterSpacing: '0.12em', marginLeft: '0.4em' }}>TOTAL</span>
+                  </span>
+                  <RoundChip t={t} gain={gain(t)} round={s.stage.index + 1} size={Math.min(32, rowH * 0.24) * 0.85} delay={i * 120} />
+                  {gain(t) > 0 && <span className="gain-pop" style={{ fontSize: '0.7em', animationDelay: `${1.7 + i * 0.12}s` }}>+{gain(t)}</span>}
                 </div>
               </div>
               <Track team={t} target={target} cardW={cardW} highlight={fresh ? isNew : undefined} delay={i * 110} />
@@ -499,6 +507,36 @@ function Scoreboard({ s }: { s: PublicState }) {
         })}
       </div>
     </>
+  );
+}
+
+/** Total score (big) with this round's points and this song's gain underneath. */
+function ScoreBlock({ t, from, gain, round, size, delay }: { t: TeamPublic; from: number; gain: number; round: number; size: number; delay: number }) {
+  return (
+    <div style={{ display: 'grid', justifyItems: 'end', gap: size * 0.06 }}>
+      <div className="row" style={{ gap: size * 0.1, alignItems: 'baseline' }}>
+        {gain > 0 && (
+          <span className="gain-pop" style={{ fontSize: size * 0.2, animationDelay: `${1.7 + delay / 1000}s` }}>+{gain}</span>
+        )}
+        <span style={{ fontSize: size * 0.48, fontWeight: 800, color: 'var(--yellow)', lineHeight: 1, letterSpacing: '-0.02em' }}>
+          <CountUp from={from} to={t.points} delay={1900} />
+        </span>
+      </div>
+      <div className="row" style={{ gap: size * 0.08 }}>
+        <span className="muted" style={{ fontSize: size * 0.14, fontWeight: 800, letterSpacing: '0.12em' }}>TOTAL</span>
+        <RoundChip t={t} gain={gain} round={round} size={size * 0.17} delay={delay} />
+      </div>
+    </div>
+  );
+}
+
+/** Pill with the points scored in the current round. */
+function RoundChip({ t, gain, round, size, delay }: { t: TeamPublic; gain: number; round: number; size: number; delay: number }) {
+  return (
+    <span className="round-chip" style={{ fontSize: size, animationDelay: `${0.4 + delay / 1000}s` }}>
+      <span className="round-chip-label">R{round}</span>
+      <CountUp from={t.stagePoints - gain} to={t.stagePoints} delay={1900} />
+    </span>
   );
 }
 
