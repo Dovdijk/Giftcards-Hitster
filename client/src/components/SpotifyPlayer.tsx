@@ -47,6 +47,7 @@ export interface PlaybackInfo {
   position: number;
   duration: number;
   trackId: string | null;
+  playingId: string | null; // what Spotify itself says is playing
 }
 
 interface Props {
@@ -60,6 +61,7 @@ export const SpotifyPlayer = forwardRef<PlayerHandle, Props>(function SpotifyPla
   const holder = useRef<HTMLDivElement>(null);
   const ctrl = useRef<Controller | null>(null);
   const loaded = useRef<{ uri: string; startAt: number; seeked: boolean } | null>(null);
+  const lastPos = useRef<number | null>(null);
   const cb = useRef(onPlayback);
   cb.current = onPlayback;
   const [ready, setReady] = useState(false);
@@ -122,8 +124,13 @@ export const SpotifyPlayer = forwardRef<PlayerHandle, Props>(function SpotifyPla
           } else if (l && !d.isPaused) {
             l.seeked = true;
           }
+          // some embed versions keep isBuffering on while playing; a moving position also means playing
+          const last = lastPos.current;
+          const moving = last !== null && (d.position ?? 0) > last;
+          lastPos.current = d.position ?? 0;
           cb.current?.({
-            playing: !d.isPaused && !d.isBuffering,
+            playing: d.isPaused === false && (!d.isBuffering || moving),
+            playingId: typeof d.playingURI === 'string' ? d.playingURI.split(':').pop() ?? null : null,
             position: d.position ?? 0,
             duration: d.duration ?? 0,
             trackId: l?.uri.split(':').pop() ?? null,

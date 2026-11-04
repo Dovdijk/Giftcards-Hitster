@@ -30,9 +30,9 @@ type Tab = 'game' | 'songs' | 'teams' | 'settings';
 function Dashboard({ s, emit, serverNow, connected, socket }: { s: AdminState; emit: Emit; serverNow: () => number; connected: boolean; socket: React.RefObject<any> }) {
   const [tab, setTab] = useState<Tab>('game');
   const { toast, show } = useToast();
-  const act = async (type: string, extra: Record<string, unknown> = {}) => {
+  const act = async (type: string, extra: Record<string, unknown> = {}, quiet = false) => {
     const r = await emit('admin', { type, ...extra });
-    if (!r.ok) show(r.error);
+    if (!r.ok && !quiet) show(r.error);
     return r;
   };
   const needsCheck = s.songs.filter((x) => x.needsCheck && !x.used).length;
@@ -73,7 +73,7 @@ const phaseLabel: Record<string, string> = {
   stageEnd: 'Round won!', awards: 'Awards', finished: 'Final results of the night',
 };
 
-type Act = (t: string, e?: Record<string, unknown>) => Promise<any>;
+type Act = (t: string, e?: Record<string, unknown>, quiet?: boolean) => Promise<any>;
 
 function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act; serverNow: () => number; show: (m: string) => void; visible: boolean }) {
   const r = s.round;
@@ -88,7 +88,6 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
   const hidden = s.settings.blind && !isMusic && !['reveal', 'scoreboard', 'stageEnd', 'awards', 'finished'].includes(s.phase);
 
   const player = useRef<PlayerHandle>(null);
-  const startedFor = useRef<string | null>(null);
   const [preview, setPreview] = useState(false);
   const pbRef = useRef<PlaybackInfo | null>(null);
   const left = useCountdown(s.phase === 'playing' ? r?.endsAt : null, serverNow);
@@ -97,14 +96,33 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
   const turnKey = r ? `${r.stage}-${r.index}-${r.kind}` : null;
 
   // pressing play in the Spotify player itself also starts the timer
+  const lastStart = useRef<{ key: string; at: number } | null>(null);
+  const isGameTrack = (p: PlaybackInfo | null) =>
+    !!p && !!gameSong?.spotifyId && (p.trackId === gameSong.spotifyId || p.playingId === gameSong.spotifyId);
+  const tryStart = () => {
+    if (phaseRef.current !== 'ready' || !turnKey) return;
+    const p = pbRef.current;
+    if (!p?.playing || !isGameTrack(p)) return;
+    const l = lastStart.current;
+    // send once per song, but send again if the server still says "ready" a few seconds later
+    if (l && l.key === turnKey && Date.now() - l.at < 2500) return;
+    lastStart.current = { key: turnKey, at: Date.now() };
+    act('startRound', {}, true); // quiet: a duplicate start is simply ignored
+  };
+  const tryStartRef = useRef(tryStart);
+  tryStartRef.current = tryStart;
   const onPlayback = (p: PlaybackInfo) => {
     pbRef.current = p;
     if (p.duration > 0) setPreview(p.duration <= 31000);
-    if (p.playing && s.phase === 'ready' && turnKey && gameSong && p.trackId === gameSong.spotifyId && startedFor.current !== turnKey) {
-      startedFor.current = turnKey;
-      act('startRound');
-    }
+    tryStartRef.current();
   };
+  // safety net: while a song is loaded, keep checking whether it is actually playing
+  useEffect(() => {
+    if (s.phase !== 'ready') return;
+    lastStart.current = null;
+    const t = setInterval(() => tryStartRef.current(), 1000);
+    return () => clearInterval(t);
+  }, [s.phase, turnKey]);
 
   // autopilot: try to start the song by itself (the host can always press play)
   const auto = s.settings.autopilot;
@@ -115,7 +133,7 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
     const timers = [1500, 3500, 6000, 9000].map((ms, i) =>
       setTimeout(() => {
         const pb = pbRef.current;
-        if (pb?.playing && pb.trackId === id) return;
+        if (pb?.playing && (pb.trackId === id || pb.playingId === id)) return;
         if (i % 2) player.current?.resume();
         else player.current?.play();
       }, ms),
