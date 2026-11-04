@@ -312,6 +312,8 @@ async function main() {
           case 'moveStage': return game.moveStage(a.stageId, Number(a.delta) || 0);
           case 'nextStage': return game.nextStage();
           case 'finishEvening': return game.finishEvening();
+          case 'nextAward': return game.nextAward();
+          case 'skipAwards': return game.skipAwards();
           case 'updateTeam': return game.adminUpdateTeam(a.teamId, a.patch ?? {});
           case 'removeTeam': {
             delete entry.photos[a.teamId];

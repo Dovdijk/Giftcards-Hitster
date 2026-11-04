@@ -5,6 +5,7 @@ import {
   MUSIC_LIST,
   type AdminState,
   type Answer,
+  type Award,
   type GameInfo,
   type Outcome,
   type Phase,
@@ -36,6 +37,8 @@ export interface GameData {
   outcome: Outcome | null;
   pendingBonus: string[];
   musicCursor: number; // which scoreboard song is next
+  awards: Award[] | null;
+  awardIndex: number;
 }
 
 export const newId = () => crypto.randomBytes(6).toString('base64url');
@@ -56,6 +59,8 @@ export function freshData(): GameData {
     outcome: null,
     pendingBonus: [],
     musicCursor: 0,
+    awards: null,
+    awardIndex: 0,
   };
 }
 
@@ -82,6 +87,8 @@ function migrate(raw: any): GameData {
   for (const t of d.teams) delete (t as any).startYear;
   d.rounds = (d.rounds ?? []).map((r: any) => ({ stage: 0, ...r }));
   d.musicCursor ??= 0;
+  d.awards ??= null;
+  d.awardIndex ??= 0;
   return d;
 }
 
@@ -100,7 +107,7 @@ function hasContent(a: Answer | undefined) {
   return a.position !== null || a.yearGuess !== null || a.artist.trim() !== '' || a.title.trim() !== '';
 }
 
-const MUSIC_PHASES: Phase[] = ['scoreboard', 'stageEnd', 'stageIntro', 'finished'];
+const MUSIC_PHASES: Phase[] = ['scoreboard', 'stageEnd', 'stageIntro', 'awards', 'finished'];
 
 export class Game extends EventEmitter {
   data: GameData;
@@ -390,10 +397,40 @@ export class Game extends EventEmitter {
     this.changed();
   }
 
-  /** Final results of the night: most points in total. */
+  /** End of the night: the awards one by one, then the final results. */
   finishEvening() {
     if (!['stageEnd', 'scoreboard', 'stageIntro'].includes(this.data.phase)) throw new GameError('Not now');
     this.clearTimer();
+    this.data.pendingBonus = [];
+    this.data.awards = this.computeAwards();
+    this.data.awardIndex = 0;
+    this.data.musicCursor++;
+    if (this.data.awards.length) {
+      this.data.outcome = null;
+      this.data.phase = 'awards';
+      this.changed();
+      return;
+    }
+    this.showFinal();
+  }
+
+  /** Next award, or the final results after the last one. */
+  nextAward() {
+    if (this.data.phase !== 'awards') throw new GameError('Not showing awards');
+    if (this.data.awards && this.data.awardIndex < this.data.awards.length - 1) {
+      this.data.awardIndex++;
+      this.changed();
+      return;
+    }
+    this.showFinal();
+  }
+
+  skipAwards() {
+    if (this.data.phase !== 'awards') throw new GameError('Not showing awards');
+    this.showFinal();
+  }
+
+  private showFinal() {
     const teams = [...this.data.teams].sort((a, b) => b.points - a.points || b.wins.length - a.wins.length);
     const top = teams[0];
     const shared = top ? teams.filter((t) => t.points === top.points && t.wins.length === top.wins.length) : [];
@@ -406,9 +443,72 @@ export class Game extends EventEmitter {
         }
       : null;
     this.data.pendingBonus = [];
-    this.data.musicCursor++;
     this.data.phase = 'finished';
     this.changed();
+  }
+
+  /** Fun awards from what happened tonight. Only awards that someone actually earned. */
+  computeAwards(): Award[] {
+    const teams = this.data.teams;
+    if (!teams.length) return [];
+    type St = { artists: number; wrong: number; near: number; lastSecond: number; lockTimes: number[] };
+    const st = new Map<string, St>(teams.map((t) => [t.id, { artists: 0, wrong: 0, near: 0, lastSecond: 0, lockTimes: [] }]));
+    let closest: { teamIds: string[]; dist: number; title: string; year: number } | null = null;
+    for (const r of this.data.rounds) {
+      if (!r.committed) continue;
+      const song = this.song(r.songId);
+      for (const p of r.participants) {
+        const x = st.get(p);
+        if (!x) continue;
+        if (r.judgments[p]?.artist) x.artists++;
+        const a = r.answers[p];
+        if (r.kind !== 'normal' || !a) continue;
+        if (a.confirmed && r.startedAt) {
+          x.lockTimes.push(Math.max(0, a.updatedAt - r.startedAt));
+          if (r.endsAt && a.updatedAt <= r.endsAt && r.endsAt - a.updatedAt <= 5000) x.lastSecond++;
+        }
+        if (a.position !== null && !r.placementCorrect[p] && song?.year != null) {
+          x.wrong++;
+          const years = r.timelineYears[p] ?? [];
+          const lo = a.position > 0 ? years[a.position - 1] : -Infinity;
+          const hi = a.position < years.length ? years[a.position] : Infinity;
+          const dist = song.year < lo ? lo - song.year : song.year - hi;
+          if (dist <= 2) x.near++;
+          if (dist > 0 && (!closest || dist < closest.dist)) closest = { teamIds: [p], dist, title: song.title, year: song.year };
+          else if (closest && dist === closest.dist && closest.title === song.title && !closest.teamIds.includes(p)) closest.teamIds.push(p);
+        }
+      }
+    }
+    const best = (val: (s: St) => number, minimum = 1) => {
+      let top = -Infinity;
+      for (const t of teams) top = Math.max(top, val(st.get(t.id)!));
+      if (top < minimum) return null;
+      return { value: top, ids: teams.filter((t) => val(st.get(t.id)!) === top).map((t) => t.id) };
+    };
+    const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+    const out: Award[] = [];
+    const add = (id: string, emoji: string, title: string, subtitle: string, teamIds: string[], detail: string) => out.push({ id, emoji, title, subtitle, teamIds, detail });
+
+    const gamblers = best((s) => s.wrong);
+    if (gamblers) add('gamblers', '🎲', 'The Gamblers', 'Most cards on the wrong spot', gamblers.ids, plural(gamblers.value, 'card on the wrong spot', 'cards on the wrong spot'));
+    const unlucky = best((s) => s.near);
+    if (unlucky) add('unlucky', '🍀', 'Unlucky Ones', 'Most often just 1 or 2 years off', unlucky.ids, plural(unlucky.value, 'time just 1 or 2 years off', 'times just 1 or 2 years off'));
+    if (closest) add('close', '🤏', 'So Close!', 'The narrowest miss of the night', closest.teamIds, `${closest.title} (${closest.year}): only ${plural(closest.dist, 'year', 'years')} off`);
+    const lastSecond = best((s) => s.lastSecond);
+    if (lastSecond) add('lastsecond', '⏱️', 'Last Second Heroes', 'Most answers in the last 5 seconds', lastSecond.ids, plural(lastSecond.value, 'answer at the very last moment', 'answers at the very last moment'));
+    const turns = this.data.rounds.filter((r) => r.committed && r.kind === 'normal').length;
+    const minLocks = Math.max(2, Math.ceil(turns * 0.3));
+    const avg = (s: St) => (s.lockTimes.length >= minLocks ? s.lockTimes.reduce((x, y) => x + y, 0) / s.lockTimes.length : Infinity);
+    const fastest = best((s) => -avg(s), -Infinity);
+    if (fastest && Number.isFinite(fastest.value)) add('fastest', '⚡', 'Fastest Fingers', 'Quickest to lock in their answer', fastest.ids, -fastest.value < 1000 ? 'locked in within a second on average' : `locked in after ${Math.round(-fastest.value / 100) / 10} seconds on average`);
+    const encyclopedia = best((s) => s.artists);
+    if (encyclopedia) add('encyclopedia', '📚', 'Music Encyclopedia', 'Most artists right', encyclopedia.ids, plural(encyclopedia.value, 'artist right', 'artists right'));
+    if (teams.length >= 2) {
+      const low = Math.min(...teams.map((t) => t.points));
+      const last = teams.filter((t) => t.points === low);
+      if (last.length < teams.length) add('last', '🐢', 'Last But Not Least', 'Bottom of the table, top of the party', last.map((t) => t.id), `${low} points and all the fun`);
+    }
+    return out;
   }
 
   private pickSong(kind: 'normal' | 'bonus', songId?: string): Song {
@@ -520,7 +620,6 @@ export class Game extends EventEmitter {
       r.placementCorrect[p] = r.kind === 'normal' && !!a && song.year !== null && isPlacementCorrect(r.timelineYears[p] ?? [], a.position, song.year);
       r.judgments[p] = { artist: null, title: null };
     }
-    r.endsAt = Math.min(r.endsAt ?? Date.now(), Date.now());
     this.data.phase = 'answers';
     this.scheduleReveal();
     this.changed();
@@ -673,6 +772,8 @@ export class Game extends EventEmitter {
     this.data.currentStage = 0;
     this.data.outcome = null;
     this.data.pendingBonus = [];
+    this.data.awards = null;
+    this.data.awardIndex = 0;
     this.data.phase = 'lobby';
     this.changed();
   }
@@ -693,8 +794,8 @@ export class Game extends EventEmitter {
   publicState(): PublicState {
     const r = this.round;
     const phase = this.data.phase;
-    const afterPlay = ['answers', 'reveal', 'scoreboard', 'stageEnd', 'finished'].includes(phase);
-    const afterReveal = ['reveal', 'scoreboard', 'stageEnd', 'finished'].includes(phase);
+    const afterPlay = ['answers', 'reveal', 'scoreboard', 'stageEnd', 'awards', 'finished'].includes(phase);
+    const afterReveal = ['reveal', 'scoreboard', 'stageEnd', 'awards', 'finished'].includes(phase);
     const song = r ? this.song(r.songId) : null;
     const st = this.stage;
     return {
@@ -725,6 +826,10 @@ export class Game extends EventEmitter {
       outcome: this.data.outcome,
       pendingBonus: this.data.pendingBonus,
       songsLeft: this.stageSongs().filter(this.playable).length,
+      // awards are revealed one at a time
+      awards: phase === 'awards' || phase === 'finished' ? (this.data.awards ?? []).slice(0, phase === 'awards' ? this.data.awardIndex + 1 : undefined) : null,
+      awardIndex: this.data.awardIndex,
+      awardCount: this.data.awards?.length ?? 0,
     };
   }
 

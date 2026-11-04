@@ -8,7 +8,17 @@ export type Phase =
   | 'reveal' // correct answer shown, host judges artist/title
   | 'scoreboard' // timelines + points
   | 'stageEnd' // a team won this round
+  | 'awards' // fun awards, one by one
   | 'finished'; // final results of the night
+
+export interface Award {
+  id: string;
+  emoji: string;
+  title: string;
+  subtitle: string; // what the award is for
+  teamIds: string[]; // winners (ties share the award)
+  detail: string; // e.g. "12 artists right"
+}
 
 export type TurnKind = 'normal' | 'bonus';
 
@@ -130,6 +140,9 @@ export interface PublicState {
   outcome: Outcome | null;
   pendingBonus: string[];
   songsLeft: number; // in the current stage
+  awards: Award[] | null;
+  awardIndex: number;
+  awardCount: number;
 }
 
 export interface AdminState extends PublicState {

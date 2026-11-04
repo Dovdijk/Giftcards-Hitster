@@ -237,3 +237,6 @@ label.field { display: grid; gap: 6px; font-size: 0.85rem; color: var(--muted); 
 }
 @keyframes rankSlide { from { transform: translateY(var(--from)); } to { transform: translateY(0); } }
 .rank-slide { animation: rankSlide 0.9s cubic-bezier(.5,0,.3,1) 2s both; }
+
+.dots { display: inline-block; animation: dots 0.9s steps(4) 1.4s 2 both; overflow: hidden; vertical-align: bottom; }
+@keyframes dots { from { width: 0; } to { width: 1.1em; } }

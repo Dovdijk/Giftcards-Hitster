@@ -70,7 +70,7 @@ function Dashboard({ s, emit, serverNow, connected, socket }: { s: AdminState; e
 const phaseLabel: Record<string, string> = {
   lobby: 'Lobby: teams are joining', intro: 'Showing the explanation', stageIntro: 'New round: timelines reset', ready: 'Song loaded, press play',
   playing: 'Teams are answering', answers: 'Showing team answers', reveal: 'Answer revealed: judge artist & title', scoreboard: 'Scoreboard',
-  stageEnd: 'Round won!', finished: 'Final results of the night',
+  stageEnd: 'Round won!', awards: 'Awards', finished: 'Final results of the night',
 };
 
 type Act = (t: string, e?: Record<string, unknown>) => Promise<any>;
@@ -140,7 +140,22 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
             {s.phase === 'answers' && <button className="btn big yellow" onClick={() => act('reveal')}>Reveal answer now</button>}
             {s.phase === 'reveal' && <button className="btn big" onClick={() => act('commit')}>Done judging → scoreboard</button>}
             {s.phase === 'stageEnd' && !lastStage && <button className="btn big" onClick={() => act('nextStage')}>▶ Start round {s.stage.index + 2}</button>}
-            {s.phase === 'stageEnd' && <button className={`btn ${lastStage ? 'big yellow' : 'small ghost'}`} onClick={() => (lastStage || confirm('End the night now? The remaining rounds are skipped.')) && act('finishEvening')}>🏆 Show final results</button>}
+            {s.phase === 'stageEnd' && <button className={`btn ${lastStage ? 'big yellow' : 'small ghost'}`} onClick={() => (lastStage || confirm('End the night now? The remaining rounds are skipped.')) && act('finishEvening')}>🏅 Awards & final results</button>}
+            {s.phase === 'awards' && s.awards && (
+              <>
+                <div className="panel" style={{ padding: 12 }}>
+                  <div className="muted" style={{ fontSize: 13 }}>Award {s.awardIndex + 1} of {s.awards.length}</div>
+                  <div style={{ fontWeight: 800 }}>{s.awards[s.awardIndex].emoji} {s.awards[s.awardIndex].title}</div>
+                  <div className="muted" style={{ fontSize: 14 }}>
+                    {s.awards[s.awardIndex].teamIds.map((id) => s.teams.find((t) => t.id === id)?.name).filter(Boolean).join(', ')} · {s.awards[s.awardIndex].detail}
+                  </div>
+                </div>
+                <button className="btn big yellow" onClick={() => act('nextAward')}>
+                  {s.awardIndex < s.awards.length - 1 ? `▶ Next award (${s.awardIndex + 2}/${s.awards.length})` : '🏆 Show final results'}
+                </button>
+                {s.awardIndex < s.awards.length - 1 && <button className="btn small ghost" onClick={() => act('skipAwards')}>Skip remaining awards</button>}
+              </>
+            )}
             {s.phase === 'finished' && <button className="btn danger" onClick={() => confirm('Reset the game? Teams and songs stay, scores and timelines are cleared.') && act('resetGame')}>Reset game (keep teams & songs)</button>}
             {['intro', 'stageIntro', 'ready'].includes(s.phase) && <button className="btn small ghost" onClick={() => act('scoreboard')}>Show scoreboard</button>}
             {['scoreboard', 'ready', 'stageIntro'].includes(s.phase) && <button className="btn small ghost" onClick={() => act('showIntro')}>Show explanation again</button>}
@@ -180,7 +195,7 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
       <div className="stack">
         {s.phase === 'lobby' && <LobbyTeams teams={s.teams} />}
         {r && ['playing', 'answers', 'reveal'].includes(s.phase) && <JudgeTable s={s} act={act} />}
-        {['intro', 'stageIntro', 'scoreboard', 'stageEnd', 'finished', 'ready'].includes(s.phase) && <MiniScoreboard s={s} />}
+        {['intro', 'stageIntro', 'scoreboard', 'stageEnd', 'awards', 'finished', 'ready'].includes(s.phase) && <MiniScoreboard s={s} />}
       </div>
     </div>
   );

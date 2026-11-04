@@ -60,7 +60,9 @@ function TopBar({ s, title }: { s: PublicState; title?: React.ReactNode }) {
       <Wordmark size={34} />
       <div style={{ fontSize: 30, fontWeight: 800 }}>{title}</div>
       <div className="pill" style={{ fontSize: 22, padding: '8px 18px' }}>
-        {s.phase === 'lobby' || s.phase === 'intro' || s.phase === 'finished'
+        {s.phase === 'awards'
+          ? `Awards · ${s.awardIndex + 1} of ${s.awardCount}`
+          : s.phase === 'lobby' || s.phase === 'intro' || s.phase === 'finished'
           ? s.game.name
           : <>{s.stage.name}{s.round && s.phase !== 'stageEnd' ? (s.round.kind === 'bonus' ? ' · ⭐ Bonus song' : ` · Song ${s.round.index}`) : ''}</>}
       </div>
@@ -79,6 +81,7 @@ function Screen({ s, serverNow }: { s: PublicState; serverNow: () => number }) {
     case 'answers': return <Answers s={s} />;
     case 'reveal': return <Reveal s={s} />;
     case 'scoreboard': return <Scoreboard s={s} />;
+    case 'awards': return <AwardScreen s={s} />;
     case 'finished': return <Finished s={s} />;
   }
 }
@@ -536,6 +539,45 @@ function StageEnd({ s }: { s: PublicState }) {
         </div>
       </div>
     </>
+  );
+}
+
+function AwardScreen({ s }: { s: PublicState }) {
+  const award = s.awards?.[s.awardIndex];
+  if (!award) return null;
+  const winners = award.teamIds.map((id) => s.teams.find((t) => t.id === id)).filter((t): t is TeamPublic => !!t);
+  const shown = winners.slice(0, 3);
+  const cardW = shown.length === 1 ? 420 : shown.length === 2 ? 380 : 320;
+  const reveal = 2.6; // seconds of drumroll
+  return (
+    <div key={award.id} style={{ position: 'absolute', inset: 0 }}>
+      <div aria-hidden style={{ position: 'absolute', left: '50%', top: 560, width: 1500, height: 1500, marginLeft: -750, marginTop: -750, background: 'radial-gradient(circle, rgba(255,214,107,0.22), transparent 60%)', animation: 'pop 0.6s ease 2.6s both' }} />
+      <TopBar s={s} />
+      <div className="center" style={{ position: 'absolute', top: 120, left: 0, right: 0, gap: 6 }}>
+        <div className="pop" style={{ width: 170, height: 170, borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: 100, background: 'radial-gradient(circle at 35% 30%, #fff6c4, #ffd23f 45%, #d99a00 100%)', boxShadow: '0 0 0 8px #b07c00, 0 20px 60px rgba(255,200,0,0.45)' }}>
+          {award.emoji}
+        </div>
+        <div className="fadeup" style={{ animationDelay: '0.3s', fontSize: 96, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05, marginTop: 18 }}>{award.title}</div>
+        <div className="fadeup" style={{ animationDelay: '0.6s', fontSize: 36, color: 'var(--muted)' }}>{award.subtitle}</div>
+        <div className="fadeup" style={{ animationDelay: '1.1s', fontSize: 34, fontWeight: 700, color: 'var(--rose)', marginTop: 18 }}>
+          And the award goes to<span className="dots">…</span>
+        </div>
+      </div>
+      <div className="row" style={{ position: 'absolute', top: 575, left: 0, right: 0, justifyContent: 'center', gap: 40, alignItems: 'flex-start' }}>
+        {shown.map((t, i) => (
+          <div key={t.id} className="center pop" style={{ gap: 12, animationDelay: `${reveal + i * 0.25}s` }}>
+            <div style={{ transform: `rotate(${(i - (shown.length - 1) / 2) * 4}deg)` }}>
+              <TeamCard team={t} width={cardW} highlight />
+            </div>
+            <div style={{ fontSize: shown.length === 1 ? 56 : 40, fontWeight: 800, maxWidth: cardW + 60, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</div>
+          </div>
+        ))}
+      </div>
+      <div className="center fadeup" style={{ position: 'absolute', bottom: 34, left: 0, right: 0, animationDelay: `${reveal + 0.6}s`, fontSize: 34, fontWeight: 700, color: 'var(--yellow)' }}>
+        {award.detail}
+        {winners.length > shown.length && <span className="muted"> · and {winners.length - shown.length} more</span>}
+      </div>
+    </div>
   );
 }
 

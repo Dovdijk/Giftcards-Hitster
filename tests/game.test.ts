@@ -86,6 +86,8 @@ test('tie on cards and round points goes to a bonus song, then the night is fini
   assert.equal(g.data.outcome!.winnerId, a);
   assert.throws(() => g.nextStage(), /last round/);
   g.finishEvening();
+  assert.equal(g.data.phase, 'awards');
+  while (g.data.phase === 'awards') g.nextAward();
   assert.equal(g.data.phase, 'finished');
   assert.equal(g.data.outcome!.winnerId, a); // 1100 vs C's 200
 });
@@ -118,4 +120,33 @@ test('old saved games are migrated', () => {
   assert.equal(g.data.songs[0].list, g.data.stages[0].id);
   assert.equal(g.data.songs[1].list, 'bonus');
   assert.deepEqual(g.data.teams[0].startYears, [2001]);
+});
+
+test('awards are computed from what happened', () => {
+  const g = new Game();
+  g.updateSettings({ targetCards: 10 });
+  const s1 = g.data.stages[0].id;
+  g.addSongs([mk(s1)('Africa', 1982), mk(s1)('Wonderwall', 1995), mk(s1)('Toxic', 2003)]);
+  const a = g.join('A').id;
+  const b = g.join('B').id;
+  const c = g.join('C').id;
+  g.startShow();
+  // start card 1987: Africa (1982) belongs before it
+  play(g, { [a]: { position: 0 }, [b]: { position: 1 }, [c]: { position: 1 } }, { [a]: [true, true], [c]: [true, false] });
+  // Wonderwall (1995): B again wrong
+  play(g, { [a]: { position: 2 }, [b]: { position: 0 }, [c]: { position: 2 } }, { [a]: [true, false] });
+  g.finishEvening();
+  const byId = Object.fromEntries(g.data.awards!.map((x) => [x.id, x]));
+  assert.deepEqual(byId.gamblers.teamIds, [b]);
+  assert.deepEqual(byId.encyclopedia.teamIds, [a]);
+  assert.equal(byId.encyclopedia.detail, '2 artists right');
+  assert.ok(byId.close.detail.startsWith('Africa (1982): only 5 years off'));
+  assert.deepEqual(byId.last.teamIds, [b]);
+  // awards are revealed one at a time
+  assert.equal(g.publicState().awards!.length, 1);
+  g.nextAward();
+  assert.equal(g.publicState().awards!.length, 2);
+  g.skipAwards();
+  assert.equal(g.data.phase, 'finished');
+  assert.equal(g.data.outcome!.winnerId, a);
 });

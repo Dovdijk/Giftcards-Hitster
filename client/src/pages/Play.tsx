@@ -271,6 +271,7 @@ function InGame({ state, emit, serverNow, toast }: { state: PlayerState; emit: R
         <Notice title={`${state.stage.name} starts!`} text={`Fresh timeline for everyone. First to ${state.settings.targetCards} cards wins +${state.settings.winBonus} points.`} vinyl />
       )}
       {state.phase === 'stageEnd' && <StageWon state={state} />}
+      {state.phase === 'awards' && <AwardNow state={state} />}
       {state.phase === 'scoreboard' && state.pendingBonus.length > 0 && (
         <Notice
           title={state.pendingBonus.includes(me.id) ? "It's a tie, you're in the bonus round!" : 'Bonus round coming up'}
@@ -632,6 +633,42 @@ function StageWon({ state }: { state: PlayerState }) {
   );
 }
 
+function AwardNow({ state }: { state: PlayerState }) {
+  const award = state.awards?.[state.awardIndex];
+  const mine = !!award && !!state.me && award.teamIds.includes(state.me.id);
+  // short suspense, like on the big screen
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    setShown(false);
+    const t = setTimeout(() => {
+      setShown(true);
+      if (mine) vibrate([100, 60, 100, 60, 300]);
+    }, 2600);
+    return () => clearTimeout(t);
+  }, [award?.id, mine]);
+  if (!award) return null;
+  return (
+    <div key={award.id} className="panel center stack pop" style={{ padding: 26 }}>
+      <div style={{ fontSize: 54 }}>{award.emoji}</div>
+      <div style={{ fontWeight: 800, fontSize: 24 }}>{award.title}</div>
+      <div className="muted">{award.subtitle}</div>
+      {!shown ? (
+        <div style={{ fontWeight: 700, color: 'var(--rose)' }}>And the award goes to…</div>
+      ) : mine ? (
+        <>
+          <Burst />
+          <div className="pill ok pop" style={{ fontSize: 18, padding: '8px 16px' }}>That's you! 🎉</div>
+          <div className="muted">{award.detail}</div>
+        </>
+      ) : (
+        <div className="fadeup" style={{ fontWeight: 700 }}>
+          {award.teamIds.map((id) => state.teams.find((t) => t.id === id)?.name).filter(Boolean).join(' & ')}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Finished({ state }: { state: PlayerState }) {
   const ranked = [...state.teams].sort((a, b) => b.points - a.points || b.wins.length - a.wins.length);
   const myRank = ranked.findIndex((t) => t.id === state.me?.id) + 1;
@@ -643,6 +680,9 @@ function Finished({ state }: { state: PlayerState }) {
       <div style={{ fontSize: 56 }}>{mine ? '🏆' : '🎉'}</div>
       <div style={{ fontWeight: 800, fontSize: 26 }}>{mine ? 'You won the night!' : `${winner?.name ?? 'Someone'} wins the night!`}</div>
       <div className="muted">You finished #{myRank} with {state.me?.points ?? 0} points.</div>
+      {(state.awards ?? []).filter((a) => state.me && a.teamIds.includes(state.me.id)).map((a) => (
+        <div key={a.id} className="pill warn" style={{ fontSize: 15, padding: '6px 14px' }}>{a.emoji} {a.title}</div>
+      ))}
     </div>
   );
 }
