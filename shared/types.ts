@@ -99,6 +99,9 @@ export interface Settings {
   winBonus: number; // points for winning a round
   speedBonus: number; // points for the first team to lock in the right spot (0 = off)
   blind: boolean; // host panel hides titles/artists/years so the host can play along
+  autopilot: boolean; // the game moves on by itself (host can still click)
+  autoRevealSeconds: number; // autopilot: time on the reveal before the scoreboard
+  autoScoreboardSeconds: number; // autopilot: time on the scoreboard before the next song
   joinOpen: boolean;
 }
 
@@ -157,6 +160,7 @@ export interface PublicState {
 }
 
 export interface AdminState extends PublicState {
+  autoAt: number | null; // autopilot: when the next step happens
   songs: Song[];
   stages: Stage[];
   currentSongId: string | null;

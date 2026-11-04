@@ -218,3 +218,41 @@ test('practice songs count for nothing and lead into round 1', () => {
   assert.equal(g.publicState().practiceLeft, 0);
   assert.throws(() => g.practiceSong());
 });
+
+test('autopilot fuzzy matching', async () => {
+  const { matchArtist, matchTitle } = await import('../server/game.js');
+  assert.equal(matchArtist('beyonce', 'Beyoncé, JAY-Z'), true);
+  assert.equal(matchArtist('Jay Z', 'Beyoncé, JAY-Z'), true);
+  assert.equal(matchArtist('the beatles', 'The Beatles'), true);
+  assert.equal(matchArtist('Michael Jakson', 'Michael Jackson'), true);
+  assert.equal(matchArtist('Madonna', 'Michael Jackson'), false);
+  assert.equal(matchTitle('dont stop me now', "Don't Stop Me Now - Remastered 2011"), true);
+  assert.equal(matchTitle('Billie Jean', 'Billie Jean'), true);
+  assert.equal(matchTitle('Beat it', 'Billie Jean'), false);
+});
+
+test('song ends when all online teams locked in; autopilot judges and moves on', async () => {
+  const g = new Game();
+  const s1 = g.data.stages[0].id;
+  g.addSongs([mk(s1)('Billie Jean', 1982), mk(s1)('Toxic', 2003), mk(s1)('X', 1990)]);
+  const a = g.join('A').id;
+  const b = g.join('B').id;
+  g.setConnected(b, false); // B's phone went offline
+  g.updateSettings({ autopilot: true, autoRevealSeconds: 3, autoScoreboardSeconds: 3 });
+  g.startShow();
+  g.nextSong();
+  g.startRound();
+  g.submitAnswer(a, { position: 0, artist: 'A', title: 'billie jean' }, true);
+  assert.equal(g.data.phase, 'answers'); // did not wait for offline B
+  assert.deepEqual(g.round!.judgments[a], { artist: true, title: true });
+  g.reveal();
+  assert.ok((g as any).autoAt > Date.now());
+  (g as any).autoStep(); // what the timer would do
+  assert.equal(g.data.phase, 'scoreboard');
+  assert.equal(g.team(a)!.points, 200 + 50);
+  (g as any).autoStep();
+  assert.equal(g.data.phase, 'ready');
+  g.updateSettings({ autopilot: false });
+  assert.equal((g as any).autoAt, null);
+  g.dispose();
+});

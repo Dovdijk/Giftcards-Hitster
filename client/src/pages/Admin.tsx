@@ -106,6 +106,16 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
     }
   };
 
+  // autopilot: try to start the song by itself (the host can always press play)
+  const auto = s.settings.autopilot;
+  useEffect(() => {
+    if (!auto || s.phase !== 'ready' || !gameSong?.spotifyId) return;
+    const t = setTimeout(() => player.current?.play(), 2000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto, s.phase, turnKey]);
+  const autoLeft = useCountdown(auto ? s.autoAt : null, serverNow);
+
   const players = s.teams.filter((t) => r?.participants.includes(t.id));
   const lastStage = s.stage.index >= s.stage.count - 1;
   const nextLabel = s.pendingBonus.length ? '⭐ Start bonus song' : ['intro', 'stageIntro'].includes(s.phase) ? `▶ Load first song of ${s.stage.name}` : '▶ Load next song';
@@ -121,6 +131,24 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
           {s.phase === 'playing' && left !== null && (
             <div className="row"><Ring seconds={left} total={s.settings.roundSeconds} size={80} /><div className="muted">{r?.confirmedTeamIds.length}/{players.length} locked in</div></div>
           )}
+
+          <div className="row" style={{ justifyContent: 'space-between', background: auto ? 'rgba(62,224,161,0.12)' : 'rgba(255,255,255,0.05)', borderRadius: 14, padding: '8px 10px' }}>
+            <div style={{ fontSize: 14 }}>
+              <b>🤖 Autopilot {auto ? 'on' : 'off'}</b>
+              {auto && (
+                <div className="muted" style={{ fontSize: 12 }}>
+                  {autoLeft !== null && s.autoAt
+                    ? `Next step in ${autoLeft}s`
+                    : s.phase === 'ready'
+                      ? 'Starting the song… (press ▶ if it stays silent)'
+                      : ['playing', 'answers'].includes(s.phase)
+                        ? 'Waiting for the answers'
+                        : 'Waiting for you'}
+                </div>
+              )}
+            </div>
+            <button className={`btn small ${auto ? 'secondary' : 'mint'}`} onClick={() => act('settings', { patch: { autopilot: !auto } })}>{auto ? 'Pause' : 'Turn on'}</button>
+          </div>
 
           <div className="stack" style={{ gap: 8 }}>
             {s.phase === 'lobby' && <button className="btn big" onClick={() => act('startShow')} disabled={!s.teams.length}>Start show ({s.teams.length} teams)</button>}
@@ -772,7 +800,10 @@ function TeamRow({ t, s, act }: { t: TeamPublic; s: AdminState; act: Act }) {
 
 function SettingsTab({ s, act }: { s: AdminState; act: Act }) {
   const [v, setV] = useState({ ...s.settings });
-  const field = (k: 'roundSeconds' | 'targetCards' | 'answersSeconds' | 'winBonus' | 'speedBonus', label: string, help: string) => (
+  const [base] = useState({ ...s.settings });
+  // only send what was changed here, so switches flipped elsewhere (autopilot, joining) aren't overwritten
+  const changes = () => Object.fromEntries(Object.entries(v).filter(([k, val]) => (base as any)[k] !== val));
+  const field = (k: 'roundSeconds' | 'targetCards' | 'answersSeconds' | 'winBonus' | 'speedBonus' | 'autoRevealSeconds' | 'autoScoreboardSeconds', label: string, help: string) => (
     <label className="field">
       {label}
       <input className="input" inputMode="numeric" value={String(v[k])} onChange={(e) => setV({ ...v, [k]: Number(e.target.value.replace(/\D/g, '')) || 0 })} />
@@ -781,12 +812,22 @@ function SettingsTab({ s, act }: { s: AdminState; act: Act }) {
   );
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'start' }}>
-      <form className="panel stack" onSubmit={(e) => { e.preventDefault(); act('settings', { patch: v }); }}>
+      <form className="panel stack" onSubmit={async (e) => { e.preventDefault(); const r = await act('settings', { patch: changes() }); if (r.ok) Object.assign(base, v); }}>
         <b>Game settings</b>
         {field('roundSeconds', 'Seconds per song', 'How long teams can answer. The song starts at the beginning and keeps playing through the answers and the reveal.')}
         {field('targetCards', 'Cards to win a round', 'Including the start card(s).')}
         {field('winBonus', 'Points for winning a round', 'Artist and title are worth 100 points each.')}
         {field('speedBonus', 'Speed bonus', 'For the first team that locks in the right spot. 0 turns it off.')}
+        <label className="row" style={{ gap: 10, cursor: 'pointer' }}>
+          <input type="checkbox" checked={!!v.autopilot} onChange={(e) => setV({ ...v, autopilot: e.target.checked })} />
+          <span><b>Autopilot</b> <span className="muted">· the game moves on by itself and judges artist/title automatically (you can still click and correct)</span></span>
+        </label>
+        {v.autopilot && (
+          <div className="row">
+            {field('autoRevealSeconds', 'Seconds on the answer', 'Time to look at (and correct) the answer.')}
+            {field('autoScoreboardSeconds', 'Seconds on the scoreboard', 'Before the next song loads.')}
+          </div>
+        )}
         <label className="row" style={{ gap: 10, cursor: 'pointer' }}>
           <input type="checkbox" checked={!!v.blind} onChange={(e) => setV({ ...v, blind: e.target.checked })} />
           <span><b>Blind mode</b> <span className="muted">· hide songs in the host panel so you can play along</span></span>

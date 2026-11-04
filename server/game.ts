@@ -51,7 +51,7 @@ export function freshStage(n: number, startYears = [1987]): Stage {
 export function freshData(): GameData {
   return {
     phase: 'lobby',
-    settings: { roundSeconds: 60, targetCards: 10, answersSeconds: 6, winBonus: 1000, speedBonus: 50, blind: false, joinOpen: true },
+    settings: { roundSeconds: 60, targetCards: 10, answersSeconds: 6, winBonus: 1000, speedBonus: 50, blind: false, autopilot: false, autoRevealSeconds: 12, autoScoreboardSeconds: 10, joinOpen: true },
     stages: [freshStage(1)],
     currentStage: 0,
     songs: [],
@@ -120,11 +120,83 @@ export class Game extends EventEmitter {
     this.data = data ? migrate(data) : freshData();
     for (const t of this.data.teams) t.connected = false;
     this.resumeTimers();
+    this.scheduleAuto();
   }
 
   // ---------- helpers ----------
   private changed() {
+    this.scheduleAuto();
     this.emit('change');
+  }
+
+  // ---------- autopilot ----------
+  private autoTimer: NodeJS.Timeout | null = null;
+  private autoKey = '';
+  autoAt: number | null = null;
+
+  /** The step the game is at: the autopilot timer restarts only when this changes. */
+  private stepKey() {
+    const r = this.round;
+    return [this.data.phase, this.data.currentStage, this.data.rounds.length, r?.startedAt ?? 0, this.data.awardIndex, this.data.settings.autopilot].join('|');
+  }
+
+  private autoDelay(): number | null {
+    const s = this.data.settings;
+    switch (this.data.phase) {
+      case 'intro': return 46_000; // let the explanation run once
+      case 'stageIntro': return 8_000;
+      case 'reveal': return s.autoRevealSeconds * 1000;
+      case 'scoreboard': return s.autoScoreboardSeconds * 1000;
+      case 'stageEnd': return 12_000;
+      case 'awards': return this.data.awards?.[this.data.awardIndex]?.grand ? 14_000 : 10_000;
+      case 'ready': {
+        // songs without Spotify link can't be started by pressing play
+        const song = this.round ? this.song(this.round.songId) : null;
+        return song && !song.spotifyId ? 4_000 : null;
+      }
+      default: return null; // playing and answers have their own timers; lobby and finished wait for the host
+    }
+  }
+
+  private scheduleAuto() {
+    const key = this.stepKey();
+    if (key === this.autoKey) return;
+    this.autoKey = key;
+    if (this.autoTimer) clearTimeout(this.autoTimer);
+    this.autoTimer = null;
+    this.autoAt = null;
+    if (!this.data.settings.autopilot) return;
+    const delay = this.autoDelay();
+    if (delay === null) return;
+    this.autoAt = Date.now() + delay;
+    this.autoTimer = setTimeout(() => this.autoStep(), delay);
+    this.autoTimer.unref?.();
+  }
+
+  private autoStep() {
+    this.autoTimer = null;
+    if (!this.data.settings.autopilot) return;
+    try {
+      switch (this.data.phase) {
+        case 'intro':
+        case 'stageIntro':
+        case 'scoreboard':
+          return this.nextSong();
+        case 'reveal':
+          return this.commit();
+        case 'stageEnd':
+          return this.data.currentStage >= this.data.stages.length - 1 ? this.finishEvening() : this.nextStage();
+        case 'awards':
+          return this.nextAward();
+        case 'ready':
+          return this.startRound();
+      }
+    } catch (e) {
+      // e.g. out of songs: wait for the host
+      this.autoAt = null;
+      this.emit('change');
+      if (!(e instanceof GameError)) console.error(e);
+    }
   }
   get round(): Turn | null {
     return this.data.rounds.at(-1) ?? null;
@@ -162,6 +234,7 @@ export class Game extends EventEmitter {
   }
   dispose() {
     this.clearTimer();
+    if (this.autoTimer) clearTimeout(this.autoTimer);
     this.removeAllListeners();
   }
   private clearTimer() {
@@ -224,6 +297,14 @@ export class Game extends EventEmitter {
     if (t && t.connected !== connected) {
       t.connected = connected;
       this.changed();
+      const r = this.round;
+      if (!connected && this.data.phase === 'playing' && r && r.participants.includes(teamId) && Object.keys(r.answers).length && this.allLockedIn(r)) {
+        // give a reconnecting phone a moment before closing the song
+        setTimeout(() => {
+          const now = this.round;
+          if (this.data.phase === 'playing' && now === r && this.allLockedIn(r)) this.endRound();
+        }, 8000).unref?.();
+      }
     }
   }
 
@@ -260,6 +341,9 @@ export class Game extends EventEmitter {
     if (patch.speedBonus !== undefined) s.speedBonus = clampInt(patch.speedBonus, 0, 10000);
     if (patch.joinOpen !== undefined) s.joinOpen = !!patch.joinOpen;
     if (patch.blind !== undefined) s.blind = !!patch.blind;
+    if (patch.autopilot !== undefined) s.autopilot = !!patch.autopilot;
+    if (patch.autoRevealSeconds !== undefined) s.autoRevealSeconds = clampInt(patch.autoRevealSeconds, 3, 120);
+    if (patch.autoScoreboardSeconds !== undefined) s.autoScoreboardSeconds = clampInt(patch.autoScoreboardSeconds, 3, 120);
     this.changed();
   }
 
@@ -663,13 +747,20 @@ export class Game extends EventEmitter {
     if (confirm) a.confirmed = true;
     a.updatedAt = Date.now();
     r.answers[teamId] = a;
-    // Everyone locked in: the answers show early, the music simply keeps playing.
-    if (r.participants.every((p) => r.answers[p]?.confirmed)) {
+    // Everyone (who is online) locked in: the answers show early, the music simply keeps playing.
+    if (this.allLockedIn(r)) {
       this.changed();
       this.endRound();
       return;
     }
     this.changed();
+  }
+
+  /** All participants confirmed; teams whose device is offline don't hold up the round. */
+  private allLockedIn(r: Turn) {
+    const online = r.participants.filter((p) => this.team(p)?.connected);
+    const waitFor = online.length ? online : r.participants;
+    return waitFor.every((p) => r.answers[p]?.confirmed);
   }
 
   endRound() {
@@ -682,6 +773,13 @@ export class Game extends EventEmitter {
       const a = r.answers[p];
       r.placementCorrect[p] = r.kind === 'normal' && !!a && song.year !== null && isPlacementCorrect(r.timelineYears[p] ?? [], a.position, song.year);
       r.judgments[p] = { artist: null, title: null };
+    }
+    if (this.data.settings.autopilot && song) {
+      for (const p of r.participants) {
+        const a = r.answers[p];
+        if (!a) continue;
+        r.judgments[p] = { artist: a.artist.trim() ? matchArtist(a.artist, song.artist) : false, title: a.title.trim() ? matchTitle(a.title, song.title) : false };
+      }
     }
     this.computeSpeed(r);
     this.data.phase = 'answers';
@@ -944,6 +1042,7 @@ export class Game extends EventEmitter {
     const songPhases: Phase[] = ['ready', 'playing', 'answers', 'reveal'];
     return {
       ...pub,
+      autoAt: this.autoAt,
       songs: this.data.songs,
       stages: this.data.stages,
       currentSongId: r && songPhases.includes(this.data.phase) ? r.songId : null,
@@ -961,6 +1060,52 @@ export class Game extends EventEmitter {
       myAnswer: t && r && pub.round ? (r.answers[t.id] ?? null) : null,
     };
   }
+}
+
+// ---------- fuzzy matching for the autopilot ----------
+export function normalizeAnswer(s: string) {
+  return s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\(.*?\)|\[.*?\]/g, ' ')
+    .replace(/ - .*$/, ' ') // "Song - Remastered 2011"
+    .replace(/\b(feat|ft|featuring)\b.*$/, ' ')
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/^the /, '')
+    .trim();
+}
+
+function levenshtein(a: string, b: string) {
+  const d = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = d[0];
+    d[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = d[j];
+      d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = tmp;
+    }
+  }
+  return d[b.length];
+}
+
+function similar(a: string, b: string) {
+  const x = normalizeAnswer(a);
+  const y = normalizeAnswer(b);
+  if (!x || !y) return false;
+  if (x === y || x.replace(/ /g, '') === y.replace(/ /g, '')) return true;
+  const allowed = Math.max(1, Math.floor(Math.max(x.length, y.length) * 0.2)); // small typos
+  return levenshtein(x, y) <= allowed;
+}
+
+export const matchTitle = (guess: string, title: string) => similar(guess, title);
+
+/** Any of the credited artists counts ("Beyonce" for "Beyoncé, JAY-Z"). */
+export function matchArtist(guess: string, artist: string) {
+  if (similar(guess, artist)) return true;
+  return artist.split(/,|&| and | x | feat\.? | ft\.? /i).some((part) => part.trim().length > 1 && similar(guess, part));
 }
 
 function clampInt(v: unknown, min: number, max: number) {
