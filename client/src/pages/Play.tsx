@@ -611,6 +611,11 @@ function MyResult({ state }: { state: PlayerState }) {
           Your guess: {a?.yearGuess ?? '–'} ({a?.yearGuess ? `${Math.abs(a.yearGuess - (song.year ?? 0))} off` : 'no answer'})
         </div>
       )}
+      {r.speedWinnerId === me.id && (
+        <div className="pill pop" style={{ justifyContent: 'center', padding: 10, fontSize: 15, background: 'rgba(255,214,107,0.2)', color: 'var(--yellow)', animationDelay: '0.4s' }}>
+          ⚡ Fastest right answer ({((r.speedMs ?? 0) / 1000).toFixed(1)}s): +{state.settings.speedBonus}
+        </div>
+      )}
       <div className="row" style={{ justifyContent: 'space-between' }}><span>Artist: <b>{a?.artist || '–'}</b></span>{mark(j?.artist)}</div>
       <div className="row" style={{ justifyContent: 'space-between' }}><span>Title: <b>{a?.title || '–'}</b></span>{mark(j?.title)}</div>
     </div>

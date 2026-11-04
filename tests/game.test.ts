@@ -150,3 +150,43 @@ test('awards are computed from what happened', () => {
   assert.equal(g.data.phase, 'finished');
   assert.equal(g.data.outcome!.winnerId, a);
 });
+
+test('speed bonus: first team to lock in the right spot gets +50', async () => {
+  const g = new Game();
+  const s1 = g.data.stages[0].id;
+  g.addSongs([mk(s1)('Africa', 1982), mk(s1)('Toxic', 2003), mk(s1)('Spare', 1990)]);
+  const a = g.join('A').id;
+  const b = g.join('B').id;
+  const c = g.join('C').id;
+  g.startShow();
+  g.nextSong();
+  g.startRound();
+  g.submitAnswer(c, { position: 1 }, true); // fastest, but wrong spot
+  await new Promise((r) => setTimeout(r, 5));
+  g.submitAnswer(b, { position: 0 }, true); // first correct one
+  await new Promise((r) => setTimeout(r, 5));
+  g.submitAnswer(a, { position: 0 }, true);
+  g.reveal();
+  assert.equal(g.round!.speedWinnerId, b);
+  assert.equal(g.publicState().round!.speedWinnerId, b);
+  g.commit();
+  assert.equal(g.team(b)!.points, 50);
+  assert.equal(g.team(a)!.points, 0);
+  // host overrides B's spot as wrong: the bonus moves to A
+  g.nextSong();
+  g.startRound();
+  g.submitAnswer(b, { position: 2 }, true);
+  await new Promise((r) => setTimeout(r, 5));
+  g.submitAnswer(a, { position: 2 }, true);
+  g.submitAnswer(c, { position: 0 }, true);
+  g.reveal();
+  assert.equal(g.round!.speedWinnerId, b);
+  g.overridePlacement(b, false);
+  assert.equal(g.round!.speedWinnerId, a);
+  g.commit();
+  assert.equal(g.team(a)!.points, 50);
+  g.finishEvening();
+  const last = g.data.awards!.at(-1)!;
+  assert.equal(last.id, 'champions');
+  assert.equal(last.grand, true);
+});

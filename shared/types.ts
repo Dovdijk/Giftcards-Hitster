@@ -15,6 +15,7 @@ export interface Award {
   id: string;
   emoji: string;
   title: string;
+  grand?: boolean; // the final award of the night
   subtitle: string; // what the award is for
   teamIds: string[]; // winners (ties share the award)
   detail: string; // e.g. "12 artists right"
@@ -84,6 +85,8 @@ export interface Turn {
   judgments: Record<string, Judgment>;
   placementCorrect: Record<string, boolean>;
   timelineYears: Record<string, number[]>;
+  speedWinnerId: string | null; // first team to lock in the right spot
+  speedMs: number | null; // how fast, from the start of the song
   committed: boolean;
 }
 
@@ -92,6 +95,7 @@ export interface Settings {
   targetCards: number; // cards needed to win a round (start cards included)
   answersSeconds: number; // how long team answers are shown before the reveal
   winBonus: number; // points for winning a round
+  speedBonus: number; // points for the first team to lock in the right spot (0 = off)
   joinOpen: boolean;
 }
 
@@ -136,6 +140,8 @@ export interface PublicState {
     song: Pick<Song, 'title' | 'artist' | 'year' | 'coverUrl'> | null;
     placementCorrect: Record<string, boolean> | null;
     judgments: Record<string, Judgment> | null;
+    speedWinnerId: string | null;
+    speedMs: number | null;
   };
   outcome: Outcome | null;
   pendingBonus: string[];

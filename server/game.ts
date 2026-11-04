@@ -50,7 +50,7 @@ export function freshStage(n: number, startYears = [1987]): Stage {
 export function freshData(): GameData {
   return {
     phase: 'lobby',
-    settings: { roundSeconds: 60, targetCards: 10, answersSeconds: 6, winBonus: 1000, joinOpen: true },
+    settings: { roundSeconds: 60, targetCards: 10, answersSeconds: 6, winBonus: 1000, speedBonus: 50, joinOpen: true },
     stages: [freshStage(1)],
     currentStage: 0,
     songs: [],
@@ -85,7 +85,7 @@ function migrate(raw: any): GameData {
     startYears: t.startYears ?? (t.startYear ? [t.startYear] : null),
   }));
   for (const t of d.teams) delete (t as any).startYear;
-  d.rounds = (d.rounds ?? []).map((r: any) => ({ stage: 0, ...r }));
+  d.rounds = (d.rounds ?? []).map((r: any) => ({ stage: 0, speedWinnerId: null, speedMs: null, ...r }));
   d.musicCursor ??= 0;
   d.awards ??= null;
   d.awardIndex ??= 0;
@@ -256,6 +256,7 @@ export class Game extends EventEmitter {
     if (patch.targetCards !== undefined) s.targetCards = clampInt(patch.targetCards, 3, 30);
     if (patch.answersSeconds !== undefined) s.answersSeconds = clampInt(patch.answersSeconds, 1, 60);
     if (patch.winBonus !== undefined) s.winBonus = clampInt(patch.winBonus, 0, 100000);
+    if (patch.speedBonus !== undefined) s.speedBonus = clampInt(patch.speedBonus, 0, 10000);
     if (patch.joinOpen !== undefined) s.joinOpen = !!patch.joinOpen;
     this.changed();
   }
@@ -508,6 +509,19 @@ export class Game extends EventEmitter {
       const last = teams.filter((t) => t.points === low);
       if (last.length < teams.length) add('last', '🐢', 'Last But Not Least', 'Bottom of the table, top of the party', last.map((t) => t.id), `${low} points and all the fun`);
     }
+    // the grand finale: tonight's winners
+    const ranked = [...teams].sort((a, b) => b.points - a.points || b.wins.length - a.wins.length);
+    const champ = ranked[0];
+    const champs = ranked.filter((t) => t.points === champ.points && t.wins.length === champ.wins.length);
+    out.push({
+      id: 'champions',
+      emoji: '🏆',
+      title: 'Best Hitster Players of All Time',
+      subtitle: 'giftcards.group Hall of Fame',
+      teamIds: champs.map((t) => t.id),
+      detail: `${champ.points} points${champ.wins.length ? ` · ${plural(champ.wins.length, 'round', 'rounds')} won` : ''}`,
+      grand: true,
+    });
     return out;
   }
 
@@ -559,6 +573,8 @@ export class Game extends EventEmitter {
       judgments: {},
       placementCorrect: {},
       timelineYears,
+      speedWinnerId: null,
+      speedMs: null,
       committed: false,
     });
     this.data.phase = 'ready';
@@ -620,6 +636,7 @@ export class Game extends EventEmitter {
       r.placementCorrect[p] = r.kind === 'normal' && !!a && song.year !== null && isPlacementCorrect(r.timelineYears[p] ?? [], a.position, song.year);
       r.judgments[p] = { artist: null, title: null };
     }
+    this.computeSpeed(r);
     this.data.phase = 'answers';
     this.scheduleReveal();
     this.changed();
@@ -644,7 +661,24 @@ export class Game extends EventEmitter {
     const r = this.round;
     if (!r || r.kind !== 'normal' || (this.data.phase !== 'reveal' && this.data.phase !== 'answers')) throw new GameError('Not judging right now');
     r.placementCorrect[teamId] = value;
+    this.computeSpeed(r);
     this.changed();
+  }
+
+  /** Speed bonus: the first team that locked in (confirmed) the right spot. */
+  private computeSpeed(r: Turn) {
+    r.speedWinnerId = null;
+    r.speedMs = null;
+    if (r.kind !== 'normal' || !r.startedAt || this.data.settings.speedBonus <= 0) return;
+    for (const p of r.participants) {
+      const a = r.answers[p];
+      if (!a?.confirmed || !r.placementCorrect[p]) continue;
+      const ms = Math.max(0, a.updatedAt - r.startedAt);
+      if (r.speedMs === null || ms < r.speedMs) {
+        r.speedWinnerId = p;
+        r.speedMs = ms;
+      }
+    }
   }
 
   private roundPoints(r: Turn, teamId: string) {
@@ -660,7 +694,7 @@ export class Game extends EventEmitter {
     for (const p of r.participants) {
       const t = this.team(p);
       if (!t) continue;
-      const pts = this.roundPoints(r, p);
+      const pts = this.roundPoints(r, p) + (r.speedWinnerId === p ? this.data.settings.speedBonus : 0);
       t.points += pts;
       t.stagePoints += pts;
       if (r.kind === 'normal' && r.placementCorrect[p] && song.year !== null) {
@@ -821,6 +855,8 @@ export class Game extends EventEmitter {
               song: afterReveal && song ? { title: song.title, artist: song.artist, year: song.year, coverUrl: song.coverUrl } : null,
               placementCorrect: afterReveal ? r.placementCorrect : null,
               judgments: afterReveal ? r.judgments : null,
+              speedWinnerId: afterReveal ? r.speedWinnerId : null,
+              speedMs: afterReveal ? r.speedMs : null,
             }
           : null,
       outcome: this.data.outcome,
@@ -842,6 +878,8 @@ export class Game extends EventEmitter {
       pub.round.timelineYears = r.timelineYears;
       pub.round.placementCorrect = r.placementCorrect;
       pub.round.judgments = r.judgments;
+      pub.round.speedWinnerId = r.speedWinnerId;
+      pub.round.speedMs = r.speedMs;
       pub.round.song = song ? { title: song.title, artist: song.artist, year: song.year, coverUrl: song.coverUrl } : null;
     }
     // the game song keeps playing through answers and reveal; scoreboard screens get scoreboard music

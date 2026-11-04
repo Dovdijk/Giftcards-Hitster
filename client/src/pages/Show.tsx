@@ -73,7 +73,7 @@ function TopBar({ s, title }: { s: PublicState; title?: React.ReactNode }) {
 function Screen({ s, serverNow }: { s: PublicState; serverNow: () => number }) {
   switch (s.phase) {
     case 'lobby': return <Lobby s={s} />;
-    case 'intro': return <Intro target={s.settings.targetCards} seconds={s.settings.roundSeconds} winBonus={s.settings.winBonus} rounds={s.stage.count} startYears={s.stage.startYears} />;
+    case 'intro': return <Intro target={s.settings.targetCards} seconds={s.settings.roundSeconds} winBonus={s.settings.winBonus} speedBonus={s.settings.speedBonus} rounds={s.stage.count} startYears={s.stage.startYears} />;
     case 'stageIntro': return <StageIntro s={s} />;
     case 'stageEnd': return <StageEnd s={s} />;
     case 'ready':
@@ -186,7 +186,8 @@ function TeamAnswerCard({ s, t, showResult, compact, i }: { s: PublicState; t: T
   const ok = r.placementCorrect?.[t.id];
   const mark = (v: boolean | null | undefined) =>
     !showResult ? null : v === true ? <span className="pill ok" style={{ fontSize: 14, flex: 'none' }}>+100</span> : v === false ? <span className="pill bad" style={{ fontSize: 14, flex: 'none' }}>✗</span> : null;
-  const border = showResult && r.kind === 'normal' ? (ok ? 'var(--mint)' : 'var(--red)') : 'var(--line)';
+  const fastest = showResult && r.speedWinnerId === t.id;
+  const border = fastest ? 'var(--yellow)' : showResult && r.kind === 'normal' ? (ok ? 'var(--mint)' : 'var(--red)') : 'var(--line)';
   const ell: React.CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 };
   const line = (icon: string, text: string | undefined, v: boolean | null | undefined) => (
     <div className="row" style={{ gap: 6, fontSize: compact ? 16 : 18, minWidth: 0, flex: compact ? 1 : undefined, justifyContent: 'space-between' }}>
@@ -196,8 +197,13 @@ function TeamAnswerCard({ s, t, showResult, compact, i }: { s: PublicState; t: T
   return (
     <div
       className={`panel ${showResult && r.kind === 'normal' ? (ok ? 'anim-bump' : 'anim-shake') : 'fadeup'}`}
-      style={{ padding: compact ? 10 : 14, border: `2px solid ${border}`, display: 'grid', gap: compact ? 4 : 8, minWidth: 0, animationDelay: showResult ? `${1.5 + i * 0.07}s` : `${i * 0.05}s`, boxShadow: showResult && ok && r.kind === 'normal' ? '0 0 30px rgba(62,224,161,0.25)' : undefined }}
+      style={{ position: 'relative', padding: compact ? 10 : 14, border: `${fastest ? 3 : 2}px solid ${border}`, display: 'grid', gap: compact ? 4 : 8, minWidth: 0, animationDelay: showResult ? `${1.5 + i * 0.07}s` : `${i * 0.05}s`, boxShadow: fastest ? '0 0 36px rgba(255,214,107,0.45)' : showResult && ok && r.kind === 'normal' ? '0 0 30px rgba(62,224,161,0.25)' : undefined }}
     >
+      {fastest && (
+        <div className="pop" style={{ position: 'absolute', top: compact ? -14 : -16, right: 12, animationDelay: '2.4s', background: 'linear-gradient(135deg, #fff1a8, #ffd23f)', color: 'var(--navy)', fontWeight: 800, fontSize: compact ? 14 : 16, padding: '4px 12px', borderRadius: 99, boxShadow: '0 6px 18px rgba(255,200,0,0.45)' }}>
+          ⚡ Fastest +{s.settings.speedBonus} · {fmtSec(r.speedMs)}
+        </div>
+      )}
       <div className="row" style={{ gap: 10, minWidth: 0 }}>
         <Avatar team={t} size={compact ? 36 : 54} />
         <div style={{ fontWeight: 800, fontSize: compact ? 18 : 21, ...ell }}>{t.name}</div>
@@ -214,6 +220,8 @@ function TeamAnswerCard({ s, t, showResult, compact, i }: { s: PublicState; t: T
     </div>
   );
 }
+
+const fmtSec = (ms: number | null | undefined) => (ms == null ? '' : `${(ms / 1000).toFixed(1)}s`);
 
 function AnswerGrid({ s, showResult, top }: { s: PublicState; showResult: boolean; top: number }) {
   const r = s.round!;
@@ -242,6 +250,7 @@ function Answers({ s }: { s: PublicState }) {
 
 function Reveal({ s }: { s: PublicState }) {
   const song = s.round!.song!;
+  const speedTeam = s.teams.find((t) => t.id === s.round!.speedWinnerId);
   return (
     <>
       <TopBar s={s} />
@@ -257,6 +266,13 @@ function Reveal({ s }: { s: PublicState }) {
           <div className="fadeup" style={{ fontSize: 34, fontWeight: 700, color: 'var(--rose)' }}>The answer is…</div>
           <div className="fadeup" style={{ animationDelay: '1.1s', fontSize: 76, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05, marginTop: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{song.title}</div>
           <div className="fadeup" style={{ animationDelay: '1.3s', fontSize: 44, fontWeight: 600 }}>{song.artist} <span style={{ color: 'var(--yellow)' }}>· {song.year}</span></div>
+          {speedTeam && (
+            <div className="pop" style={{ animationDelay: '2.4s', marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 12, background: 'rgba(255,214,107,0.16)', border: '2px solid var(--yellow)', borderRadius: 99, padding: '6px 18px 6px 8px', fontSize: 26, fontWeight: 700 }}>
+              <Avatar team={speedTeam} size={40} ring="var(--yellow)" />
+              <span>⚡ Fastest right answer: <b>{speedTeam.name}</b> in {fmtSec(s.round!.speedMs)}</span>
+              <span style={{ color: 'var(--yellow)', fontWeight: 800 }}>+{s.settings.speedBonus}</span>
+            </div>
+          )}
         </div>
       </div>
       <AnswerGrid s={s} showResult top={410} />
@@ -548,19 +564,35 @@ function AwardScreen({ s }: { s: PublicState }) {
   const winners = award.teamIds.map((id) => s.teams.find((t) => t.id === id)).filter((t): t is TeamPublic => !!t);
   const shown = winners.slice(0, 3);
   const cardW = shown.length === 1 ? 420 : shown.length === 2 ? 380 : 320;
-  const reveal = 2.6; // seconds of drumroll
+  const reveal = award.grand ? 3.6 : 2.6; // seconds of drumroll
   return (
     <div key={award.id} style={{ position: 'absolute', inset: 0 }}>
+      {award.grand && (
+        <div style={{ position: 'absolute', inset: 0, animation: `fadeUp 0.8s ease ${reveal}s both` }}>
+          <CardRain count={22} />
+          <Confetti />
+        </div>
+      )}
       <div aria-hidden style={{ position: 'absolute', left: '50%', top: 560, width: 1500, height: 1500, marginLeft: -750, marginTop: -750, background: 'radial-gradient(circle, rgba(255,214,107,0.22), transparent 60%)', animation: 'pop 0.6s ease 2.6s both' }} />
       <TopBar s={s} />
       <div className="center" style={{ position: 'absolute', top: 120, left: 0, right: 0, gap: 6 }}>
-        <div className="pop" style={{ width: 170, height: 170, borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: 100, background: 'radial-gradient(circle at 35% 30%, #fff6c4, #ffd23f 45%, #d99a00 100%)', boxShadow: '0 0 0 8px #b07c00, 0 20px 60px rgba(255,200,0,0.45)' }}>
+        <div className="pop" style={{ width: award.grand ? 190 : 170, height: award.grand ? 190 : 170, borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: award.grand ? 115 : 100, background: 'radial-gradient(circle at 35% 30%, #fff6c4, #ffd23f 45%, #d99a00 100%)', boxShadow: '0 0 0 8px #b07c00, 0 20px 60px rgba(255,200,0,0.45)' }}>
           {award.emoji}
         </div>
-        <div className="fadeup" style={{ animationDelay: '0.3s', fontSize: 96, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05, marginTop: 18 }}>{award.title}</div>
-        <div className="fadeup" style={{ animationDelay: '0.6s', fontSize: 36, color: 'var(--muted)' }}>{award.subtitle}</div>
+        <div
+          className="fadeup"
+          style={{
+            animationDelay: '0.3s', fontSize: award.grand ? 100 : 96, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05, marginTop: 18,
+            ...(award.grand ? { background: 'linear-gradient(90deg, #fff1a8, #ffd23f, #ff9f43, #ffd23f, #fff1a8)', WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent', filter: 'drop-shadow(0 6px 24px rgba(255,200,0,0.35))' } : {}),
+          }}
+        >
+          {award.title}
+        </div>
+        <div className="fadeup" style={{ animationDelay: '0.6s', fontSize: 36, color: award.grand ? '#fff' : 'var(--muted)', fontWeight: award.grand ? 700 : 400 }}>
+          {award.grand ? <>giftcards<span style={{ color: 'var(--pink)' }}>.</span>group Hall of Fame</> : award.subtitle}
+        </div>
         <div className="fadeup" style={{ animationDelay: '1.1s', fontSize: 34, fontWeight: 700, color: 'var(--rose)', marginTop: 18 }}>
-          And the award goes to<span className="dots">…</span>
+          {award.grand ? 'The champions of tonight are' : 'And the award goes to'}<span className="dots">…</span>
         </div>
       </div>
       <div className="row" style={{ position: 'absolute', top: 575, left: 0, right: 0, justifyContent: 'center', gap: 40, alignItems: 'flex-start' }}>
@@ -569,7 +601,7 @@ function AwardScreen({ s }: { s: PublicState }) {
             <div style={{ transform: `rotate(${(i - (shown.length - 1) / 2) * 4}deg)` }}>
               <TeamCard team={t} width={cardW} highlight />
             </div>
-            <div style={{ fontSize: shown.length === 1 ? 56 : 40, fontWeight: 800, maxWidth: cardW + 60, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</div>
+            <div style={{ fontSize: shown.length === 1 ? 56 : 40, fontWeight: 800, maxWidth: shown.length === 1 ? 1700 : cardW + 60, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</div>
           </div>
         ))}
       </div>

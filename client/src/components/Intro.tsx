@@ -3,13 +3,13 @@ import { Vinyl, Wordmark } from './common';
 import { GiftCard, Medals } from './giftcard';
 
 /** Looping explanation shown on the big screen before the first song. */
-export default function Intro({ target, seconds, winBonus, rounds, startYears }: { target: number; seconds: number; winBonus: number; rounds: number; startYears: number[] }) {
+export default function Intro({ target, seconds, winBonus, speedBonus, rounds, startYears }: { target: number; seconds: number; winBonus: number; speedBonus: number; rounds: number; startYears: number[] }) {
   const steps = [
     { title: <>Welcome to <span className="accent">Hitster Night!</span></>, text: 'Music, memories and a little bit of competition.', visual: <Vinyl size={360} spinning label="♪" /> },
     { title: <>Every team starts with <span className="accent">{startYears.length === 1 ? 'one year' : 'two years'}</span></>, text: 'That is the start of your timeline.', visual: <Cards years={startYears} start /> },
     { title: <>Listen <span className="accent">carefully</span></>, text: `A song plays. No title, no artist. You have ${seconds} seconds.`, visual: <Vinyl size={360} spinning /> },
     { title: <>Drag it to the <span className="accent">right spot</span></>, text: 'Before or after? Place the song in your timeline on your phone.', visual: <DragDemo /> },
-    { title: <>Bonus <span className="accent">points</span></>, text: 'Name the artist: +100. Name the title: +100.', visual: <Points /> },
+    { title: <>Bonus <span className="accent">points</span></>, text: speedBonus ? `Name the artist: +100. Name the title: +100. First to lock in the right spot: +${speedBonus}.` : 'Name the artist: +100. Name the title: +100.', visual: <Points speed={speedBonus} /> },
     { title: <>Right spot? <span className="accent">Card is yours</span></>, text: 'Every correct placement grows your timeline.', visual: <Cards years={[1979, 1987, 1995, 2004]} pop={2} /> },
     { title: <>First to <span className="accent">{target} cards</span> wins the round</>, text: `Round winner: +${winBonus} points and a gold medal. Tie? Bonus song: closest to the exact year!`, visual: <Medals wins={[1]} size={300} /> },
     { title: <>{rounds > 1 ? <>{rounds} rounds, </> : null}most <span className="accent">points</span> wins the night</>, text: 'Points carry over between rounds. Every round starts with a fresh timeline.', visual: <div style={{ fontSize: 260 }}>🏆</div> },
@@ -70,13 +70,14 @@ function DragDemo() {
   );
 }
 
-function Points() {
+function Points({ speed }: { speed: number }) {
+  const lines: [string, number][] = [['🎤 Artist', 100], ['🎵 Title', 100], ...(speed ? ([['⚡ Fastest', speed]] as [string, number][]) : [])];
   return (
     <div className="stack" style={{ gap: 26 }}>
-      {['🎤 Artist', '🎵 Title'].map((l, k) => (
+      {lines.map(([l, pts], k) => (
         <div key={l} className="row pop" style={{ gap: 24, fontSize: 56, fontWeight: 800, animationDelay: `${0.4 + k * 0.5}s` }}>
           <span>{l}</span>
-          <span className="pill ok" style={{ fontSize: 48, padding: '8px 22px' }}>+100</span>
+          <span className="pill ok" style={{ fontSize: 48, padding: '8px 22px' }}>+{pts}</span>
         </div>
       ))}
     </div>

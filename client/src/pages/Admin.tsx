@@ -151,7 +151,7 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
                   </div>
                 </div>
                 <button className="btn big yellow" onClick={() => act('nextAward')}>
-                  {s.awardIndex < s.awards.length - 1 ? `▶ Next award (${s.awardIndex + 2}/${s.awards.length})` : '🏆 Show final results'}
+                  {s.awardIndex < s.awards.length - 1 ? (s.awards[s.awardIndex + 1].grand ? '🏆 Final award: Best Hitster Players of All Time' : `▶ Next award (${s.awardIndex + 2}/${s.awards.length})`) : '🏆 Show final results'}
                 </button>
                 {s.awardIndex < s.awards.length - 1 && <button className="btn small ghost" onClick={() => act('skipAwards')}>Skip remaining awards</button>}
               </>
@@ -296,6 +296,7 @@ function JudgeTable({ s, act }: { s: AdminState; act: (t: string, e?: Record<str
                   ) : (
                     <div className="row" style={{ gap: 6 }}>
                       <b>{placement(r.timelineYears?.[t.id], a?.position)}</b>
+                      {r.speedWinnerId === t.id && <span className="pill warn" title="First team to lock in the right spot">⚡ +{s.settings.speedBonus} · {((r.speedMs ?? 0) / 1000).toFixed(1)}s</span>}
                       {judging && (
                         <button className={`btn small ${ok ? 'mint' : 'danger'}`} title="Click to override" onClick={() => act('placement', { teamId: t.id, value: !ok })}>
                           {ok ? '✓' : '✗'}
@@ -647,7 +648,7 @@ function TeamRow({ t, s, act }: { t: TeamPublic; s: AdminState; act: Act }) {
 
 function SettingsTab({ s, act }: { s: AdminState; act: Act }) {
   const [v, setV] = useState({ ...s.settings });
-  const field = (k: 'roundSeconds' | 'targetCards' | 'answersSeconds' | 'winBonus', label: string, help: string) => (
+  const field = (k: 'roundSeconds' | 'targetCards' | 'answersSeconds' | 'winBonus' | 'speedBonus', label: string, help: string) => (
     <label className="field">
       {label}
       <input className="input" inputMode="numeric" value={String(v[k])} onChange={(e) => setV({ ...v, [k]: Number(e.target.value.replace(/\D/g, '')) || 0 })} />
@@ -661,6 +662,7 @@ function SettingsTab({ s, act }: { s: AdminState; act: Act }) {
         {field('roundSeconds', 'Seconds per song', 'How long teams can answer. The song starts at the beginning and keeps playing through the answers and the reveal.')}
         {field('targetCards', 'Cards to win a round', 'Including the start card(s).')}
         {field('winBonus', 'Points for winning a round', 'Artist and title are worth 100 points each.')}
+        {field('speedBonus', 'Speed bonus', 'For the first team that locks in the right spot. 0 turns it off.')}
         {field('answersSeconds', 'Seconds to show answers', 'Before the correct answer appears.')}
         <button className="btn">Save settings</button>
       </form>
