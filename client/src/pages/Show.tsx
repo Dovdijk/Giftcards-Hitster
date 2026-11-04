@@ -14,14 +14,25 @@ function Stage({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const fit = () => setScale(Math.min(window.innerWidth / 1920, window.innerHeight / 1080));
     fit();
+    // moving the window to another screen (laptop → TV) or going fullscreen doesn't always fire 'resize'
     window.addEventListener('resize', fit);
-    return () => window.removeEventListener('resize', fit);
+    document.addEventListener('fullscreenchange', fit);
+    window.visualViewport?.addEventListener('resize', fit);
+    const poll = setInterval(fit, 1000);
+    return () => {
+      window.removeEventListener('resize', fit);
+      document.removeEventListener('fullscreenchange', fit);
+      window.visualViewport?.removeEventListener('resize', fit);
+      clearInterval(poll);
+    };
   }, []);
   return (
-    <div style={{ position: 'fixed', inset: 0, overflow: 'hidden', background: 'var(--navy)', display: 'grid', placeItems: 'center' }}>
+    <div style={{ position: 'fixed', inset: 0, overflow: 'hidden', background: 'var(--navy)' }}>
       <div
         style={{
-          width: 1920, height: 1080, transform: `scale(${scale})`, flex: 'none', position: 'relative', overflow: 'hidden',
+          // explicit centring: grid/flex centring misplaces a scaled element that is bigger than the window
+          position: 'absolute', left: '50%', top: '50%', width: 1920, height: 1080,
+          transform: `translate(-50%, -50%) scale(${scale})`, transformOrigin: 'center center', overflow: 'hidden',
           background: 'var(--bg)',
         }}
       >
