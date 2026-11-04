@@ -38,6 +38,7 @@ function loadApi(): Promise<any> {
 
 export interface PlayerHandle {
   play(): void;
+  resume(): void;
   pause(): void;
 }
 
@@ -66,6 +67,7 @@ export const SpotifyPlayer = forwardRef<PlayerHandle, Props>(function SpotifyPla
 
   useImperativeHandle(ref, () => ({
     play: () => ctrl.current?.play(),
+    resume: () => ctrl.current?.resume(),
     pause: () => ctrl.current?.pause(),
   }));
 

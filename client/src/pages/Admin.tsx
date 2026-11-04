@@ -110,8 +110,17 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
   const auto = s.settings.autopilot;
   useEffect(() => {
     if (!auto || s.phase !== 'ready' || !gameSong?.spotifyId) return;
-    const t = setTimeout(() => player.current?.play(), 2000);
-    return () => clearTimeout(t);
+    // the embed needs a moment after loading a new song; try a few times, alternating play() and resume()
+    const id = gameSong.spotifyId;
+    const timers = [1500, 3500, 6000, 9000].map((ms, i) =>
+      setTimeout(() => {
+        const pb = pbRef.current;
+        if (pb?.playing && pb.trackId === id) return;
+        if (i % 2) player.current?.resume();
+        else player.current?.play();
+      }, ms),
+    );
+    return () => timers.forEach(clearTimeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auto, s.phase, turnKey]);
   const autoLeft = useCountdown(auto ? s.autoAt : null, serverNow);
@@ -120,7 +129,7 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
   useEffect(() => {
     setNeedsClick(false);
     if (s.phase !== 'ready' || !gameSong?.spotifyId) return;
-    const t = setTimeout(() => setNeedsClick(true), auto ? 5000 : 15000);
+    const t = setTimeout(() => setNeedsClick(true), auto ? 10000 : 15000);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.phase, turnKey]);
