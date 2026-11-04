@@ -372,6 +372,8 @@ function Scoreboard({ s }: { s: PublicState }) {
   const ranked = [...s.teams].sort((a, b) => b.timeline.length - a.timeline.length || b.points - a.points);
   const [prev] = useState(() => lastBoard);
   const [fresh, setFresh] = useState(true);
+  // decided once: switching the animation class later replays the fade-in (a flash on the TV)
+  const [slide] = useState(() => !!lastBoard);
   useEffect(() => {
     const t = setTimeout(() => setFresh(false), 6000);
     return () => clearTimeout(t);
@@ -409,13 +411,13 @@ function Scoreboard({ s }: { s: PublicState }) {
     delta ? <span className={`rank-move ${delta > 0 ? 'up' : 'down'}`} style={{ fontSize: size, marginLeft: size * 0.5 }}>{delta > 0 ? `▲${delta}` : `▼${-delta}`}</span> : null;
   const box = (t: TeamPublic, rank: number, i: number, extra: React.CSSProperties) => ({
     key: t.id,
-    className: prev && fresh ? 'rank-slide' : 'fadeup',
+    className: slide ? 'rank-slide' : 'fadeup',
     style: {
       ['--from' as any]: `${move(t, rank).from}px`,
       position: 'relative',
       zIndex: move(t, rank).delta > 0 ? 2 : 1,
       borderRadius: 26,
-      animationDelay: prev && fresh ? undefined : `${i * 60}ms`,
+      animationDelay: slide ? undefined : `${i * 60}ms`,
       background: rank === 1 ? 'rgba(255,214,107,0.12)' : 'rgba(255,255,255,0.06)',
       border: s.pendingBonus.includes(t.id) ? '3px solid var(--yellow)' : '1px solid var(--line)',
       ...extra,
