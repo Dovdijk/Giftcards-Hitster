@@ -75,7 +75,8 @@ test('tie on cards and round points goes to a bonus song, then the night is fini
   assert.deepEqual(new Set(g.data.pendingBonus), new Set([a, b]));
   g.nextSong();
   assert.equal(g.round!.kind, 'bonus');
-  assert.throws(() => { g.startRound(); g.submitAnswer(c, { yearGuess: 1984 }, true); });
+  g.startRound();
+  assert.throws(() => g.submitAnswer(c, { yearGuess: 1984 }, true), /not playing/);
   g.submitAnswer(a, { yearGuess: 1981 }, true);
   g.submitAnswer(b, { yearGuess: 1987 }, true);
   g.reveal();
@@ -89,7 +90,7 @@ test('tie on cards and round points goes to a bonus song, then the night is fini
   assert.equal(g.data.outcome!.winnerId, a); // 1100 vs C's 200
 });
 
-test('two start cards and confirm requires a position', () => {
+test('two start cards; an incomplete answer can be confirmed and counts as wrong', () => {
   const g = new Game();
   const s1 = g.data.stages[0].id;
   g.updateStage(s1, { startYears: [2005, 1975] });
@@ -99,7 +100,9 @@ test('two start cards and confirm requires a position', () => {
   assert.deepEqual(g.team(a)!.timeline.map((c) => c.year), [1975, 2005]);
   g.nextSong();
   g.startRound();
-  assert.throws(() => g.submitAnswer(a, { title: 'x' }, true), /Drag/);
+  g.submitAnswer(a, { title: 'x' }, true);
+  assert.equal(g.data.phase, 'answers'); // everyone locked in
+  assert.equal(g.round!.placementCorrect[a], false);
 });
 
 test('old saved games are migrated', () => {

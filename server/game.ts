@@ -496,11 +496,8 @@ export class Game extends EventEmitter {
     if (patch.yearGuess !== undefined) a.yearGuess = patch.yearGuess === null ? null : clampInt(patch.yearGuess, 1000, 2100);
     if (patch.artist !== undefined) a.artist = String(patch.artist).slice(0, 80);
     if (patch.title !== undefined) a.title = String(patch.title).slice(0, 80);
-    if (confirm) {
-      if (r.kind === 'normal' && a.position === null) throw new GameError('Drag the song into your timeline first');
-      if (r.kind === 'bonus' && a.yearGuess === null) throw new GameError('Enter a year first');
-      a.confirmed = true;
-    }
+    // the player confirmed a warning on their screen, so incomplete answers are allowed
+    if (confirm) a.confirmed = true;
     a.updatedAt = Date.now();
     r.answers[teamId] = a;
     // Everyone locked in: the answers show early, the music simply keeps playing.

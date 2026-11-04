@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import type { PlayerState, TimelineCard } from '../../../shared/types';
 import { useCountdown, useGameSocket } from '../socket';
@@ -403,7 +404,25 @@ function AnswerForm({ state, emit, serverNow, toast }: { state: PlayerState; emi
     if (typeof over === 'string' && over.startsWith('slot-')) place(Number(over.slice(5)));
   }
 
+  const [ask, setAsk] = useState<string[] | null>(null);
+  const missing = () => {
+    const m: string[] = [];
+    if (bonus ? yearGuess.length !== 4 : position === null) m.push(bonus ? 'the year' : 'the spot in your timeline');
+    if (!artist.trim()) m.push('the artist');
+    if (!title.trim()) m.push('the title');
+    return m;
+  };
+  /** Confirm button: warn first when something is still empty. */
+  function tryConfirm() {
+    const m = missing();
+    if (m.length) {
+      vibrate(30);
+      setAsk(m);
+    } else confirm();
+  }
+
   async function confirm() {
+    setAsk(null);
     if (draftTimer.current) clearTimeout(draftTimer.current);
     const res = await emit('answer', { answer: current(), confirm: true });
     if (!res.ok) toast(res.error);
@@ -428,7 +447,7 @@ function AnswerForm({ state, emit, serverNow, toast }: { state: PlayerState; emi
     );
   }
 
-  const canConfirm = bonus ? yearGuess.length === 4 : position !== null;
+  const complete = missing().length === 0;
   const answerFields = (
     <div className="panel stack">
       <label className="field">
@@ -439,12 +458,12 @@ function AnswerForm({ state, emit, serverNow, toast }: { state: PlayerState; emi
       <label className="field">
         <span>Title <span style={{ fontWeight: 500 }}>(+100)</span></span>
         <input ref={titleRef} className="input" value={title} maxLength={80} autoComplete="off" onChange={(e) => { setTitle(e.target.value); sendDraft({ ...current(), title: e.target.value }); }}
-          onKeyDown={(e) => { if (e.key === 'Enter' && wide && canConfirm) { e.preventDefault(); confirm(); } }} />
+          onKeyDown={(e) => { if (e.key === 'Enter' && wide) { e.preventDefault(); tryConfirm(); } }} />
       </label>
       {wide && (
         <>
-          <button className="btn mint big" disabled={!canConfirm} onClick={confirm}>Confirm answer</button>
-          <div className="muted" style={{ fontSize: 12, textAlign: 'center' }}>{canConfirm ? 'Press Enter in the title field to confirm.' : bonus ? 'Enter a year first.' : 'Drag the orange card into your timeline first.'}</div>
+          <button className={`btn big ${complete ? 'mint' : 'secondary'}`} onClick={tryConfirm}>Confirm answer</button>
+          <div className="muted" style={{ fontSize: 12, textAlign: 'center' }}>Press Enter in the title field to confirm.</div>
         </>
       )}
     </div>
@@ -505,16 +524,46 @@ function AnswerForm({ state, emit, serverNow, toast }: { state: PlayerState; emi
       {wide ? <div style={{ position: 'sticky', top: 16 }}>{answerFields}</div> : answerFields}
 
       {countdown}
+      {ask && <ConfirmMissing missing={ask} onYes={confirm} onNo={() => setAsk(null)} />}
       {!wide && (
         <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, padding: 16, background: 'linear-gradient(transparent, var(--navy) 35%)' }}>
           <div style={{ maxWidth: 520, margin: '0 auto' }}>
-            <button className="btn mint big" style={{ width: '100%' }} disabled={!canConfirm} onClick={confirm}>
+            <button className={`btn big ${complete ? 'mint' : 'secondary'}`} style={{ width: '100%' }} onClick={tryConfirm}>
               Confirm answer
             </button>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function ConfirmMissing({ missing, onYes, onNo }: { missing: string[]; onYes: () => void; onNo: () => void }) {
+  const list = missing.length === 1 ? missing[0] : `${missing.slice(0, -1).join(', ')} and ${missing[missing.length - 1]}`;
+  const noSpot = missing.some((m) => m.startsWith('the spot') || m === 'the year');
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onNo();
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [onNo]);
+  return createPortal(
+    <div style={{ position: 'fixed', inset: 0, zIndex: 160, background: 'rgba(0,4,40,0.8)', display: 'grid', placeItems: 'center', padding: 20 }} onClick={onNo}>
+      <div className="panel stack pop" style={{ width: '100%', maxWidth: 400, background: 'var(--navy-2)', padding: 24, textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontSize: 40 }}>🤔</div>
+        <div style={{ fontWeight: 800, fontSize: 22 }}>Are you sure?</div>
+        <div className="muted">
+          You haven't filled in <b style={{ color: '#fff' }}>{list}</b> yet.
+          {noSpot && <><br />Without it this card can't go on your timeline.</>}
+        </div>
+        <div className="row" style={{ marginTop: 6 }}>
+          <button className="btn secondary grow big" autoFocus onClick={onNo}>No, go back</button>
+          <button className="btn grow big" onClick={onYes}>Yes, send</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
