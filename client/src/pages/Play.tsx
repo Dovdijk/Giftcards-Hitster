@@ -4,7 +4,7 @@ import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSe
 import type { PlayerState, TimelineCard } from '../../../shared/types';
 import { useCountdown, useGameSocket } from '../socket';
 import { Avatar, Offline, Ring, Vinyl, Wordmark, useToast } from '../components/common';
-import { GiftCard, Shapes, TeamCard, TimelineRow } from '../components/giftcard';
+import { GiftCard, Medals, Shapes, TeamCard, TimelineRow } from '../components/giftcard';
 
 const tokenKey = (code: string) => `hitster-token-${code}`;
 
@@ -197,12 +197,18 @@ function Header({ state }: { state: PlayerState }) {
     <div className="panel row" style={{ padding: 12 }}>
       <Avatar team={me} size={52} />
       <div className="grow" style={{ minWidth: 0 }}>
-        <div style={{ fontWeight: 800, fontSize: 18, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{me.name}</div>
+        <div className="row" style={{ gap: 0, minWidth: 0 }}>
+          <span style={{ fontWeight: 800, fontSize: 18, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{me.name}</span>
+          <Medals wins={me.wins} size={20} />
+        </div>
         <div className="muted" style={{ fontSize: 13 }}>
-          {me.timeline.length}/{state.settings.targetCards} cards · {me.points} pts
+          {me.timeline.length}/{state.settings.targetCards} cards · <b style={{ color: 'var(--yellow)' }}>{me.points} pts</b>
         </div>
       </div>
-      {state.round && <span className="pill">{state.round.kind === 'bonus' ? 'Bonus' : `Round ${state.round.index}`}</span>}
+      <span className="pill" style={{ textAlign: 'center', lineHeight: 1.2 }}>
+        {state.stage.name}
+        {state.round ? (state.round.kind === 'bonus' ? ' · Bonus' : ` · Song ${state.round.index}`) : ''}
+      </span>
     </div>
   );
 }
@@ -223,6 +229,10 @@ function InGame({ state, emit, serverNow, toast }: { state: PlayerState; emit: R
       {state.phase === 'answers' && <Notice title="Time's up!" text="Look at the big screen…" />}
       {state.phase === 'reveal' && <MyResult state={state} />}
       {state.phase === 'finished' && <Finished state={state} />}
+      {state.phase === 'stageIntro' && (
+        <Notice title={`${state.stage.name} starts!`} text={`Fresh timeline for everyone. First to ${state.settings.targetCards} cards wins +${state.settings.winBonus} points.`} vinyl />
+      )}
+      {state.phase === 'stageEnd' && <StageWon state={state} />}
       {state.phase === 'scoreboard' && state.pendingBonus.length > 0 && (
         <Notice
           title={state.pendingBonus.includes(me.id) ? "It's a tie, you're in the bonus round!" : 'Bonus round coming up'}
@@ -486,14 +496,28 @@ function MyResult({ state }: { state: PlayerState }) {
   );
 }
 
-function Finished({ state }: { state: PlayerState }) {
+function StageWon({ state }: { state: PlayerState }) {
   const winner = state.teams.find((t) => t.id === state.outcome?.winnerId);
   const mine = winner?.id === state.me?.id;
   return (
     <div className="panel center stack pop" style={{ padding: 28 }}>
+      <Medals wins={[state.stage.index + 1]} size={84} />
+      <div style={{ fontWeight: 800, fontSize: 24 }}>{mine ? `You won ${state.stage.name}!` : `${winner?.name ?? 'Someone'} wins ${state.stage.name}`}</div>
+      <div className="muted">{mine ? `+${state.settings.winBonus} points for your team.` : state.outcome?.message}</div>
+    </div>
+  );
+}
+
+function Finished({ state }: { state: PlayerState }) {
+  const ranked = [...state.teams].sort((a, b) => b.points - a.points || b.wins.length - a.wins.length);
+  const myRank = ranked.findIndex((t) => t.id === state.me?.id) + 1;
+  const winner = ranked[0];
+  const mine = winner?.id === state.me?.id;
+  return (
+    <div className="panel center stack pop" style={{ padding: 28 }}>
       <div style={{ fontSize: 56 }}>{mine ? '🏆' : '🎉'}</div>
-      <div style={{ fontWeight: 800, fontSize: 26 }}>{mine ? 'You won!' : `${winner?.name ?? 'Someone'} wins!`}</div>
-      <div className="muted">{state.outcome?.message}</div>
+      <div style={{ fontWeight: 800, fontSize: 26 }}>{mine ? 'You won the night!' : `${winner?.name ?? 'Someone'} wins the night!`}</div>
+      <div className="muted">You finished #{myRank} with {state.me?.points ?? 0} points.</div>
     </div>
   );
 }

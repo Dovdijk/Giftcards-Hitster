@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { Game, freshData, type GameData } from './game.js';
+import { Game, freshData, newId, type GameData } from './game.js';
 import { debouncedSaver, type KV } from './store.js';
 import type { GameSummary } from '../shared/types.js';
 
@@ -78,8 +78,15 @@ export class Registry extends EventEmitter {
   create(ownerId: string, name: string, copyFrom?: Entry) {
     const data = freshData();
     if (copyFrom) {
-      data.settings = { ...copyFrom.game.data.settings, joinOpen: true };
-      data.songs = copyFrom.game.data.songs.map((s) => ({ ...s, id: crypto.randomBytes(6).toString('base64url'), used: false }));
+      const src = copyFrom.game.data;
+      data.settings = { ...src.settings, joinOpen: true };
+      const idMap = new Map<string, string>();
+      data.stages = src.stages.map((st) => {
+        const nid = newId();
+        idMap.set(st.id, nid);
+        return { ...st, id: nid, startYears: [...st.startYears] };
+      });
+      data.songs = src.songs.map((s) => ({ ...s, id: newId(), list: idMap.get(s.list) ?? s.list, used: false }));
     }
     const now = Date.now();
     const meta: GameMeta = {
@@ -139,9 +146,10 @@ export class Registry extends EventEmitter {
       updatedAt: e.meta.updatedAt,
       phase: d.phase,
       teams: d.teams.length,
-      songs: d.songs.length,
-      songsToCheck: d.songs.filter((s) => s.needsCheck).length,
-      bonusSongs: d.songs.filter((s) => s.bonus).length,
+      songs: d.songs.filter((s) => s.list !== 'music').length,
+      stages: d.stages.length,
+      songsToCheck: d.songs.filter((s) => s.needsCheck && s.list !== 'music').length,
+      bonusSongs: d.songs.filter((s) => s.list === 'bonus').length,
     };
   }
 

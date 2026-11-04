@@ -4,7 +4,7 @@ import QRCode from 'qrcode';
 import type { PublicState, TeamPublic, TimelineCard } from '../../../shared/types';
 import { useCountdown, useGameSocket } from '../socket';
 import { Avatar, Ring, Vinyl, Wordmark } from '../components/common';
-import { GiftCard, Shapes, TeamCard } from '../components/giftcard';
+import { GiftCard, Medals, Shapes, TeamCard } from '../components/giftcard';
 import Intro from '../components/Intro';
 
 /** Fixed 1920x1080 stage, scaled to whatever screen it's on. */
@@ -53,7 +53,9 @@ function TopBar({ s, title }: { s: PublicState; title?: React.ReactNode }) {
       <Wordmark size={34} />
       <div style={{ fontSize: 30, fontWeight: 800 }}>{title}</div>
       <div className="pill" style={{ fontSize: 22, padding: '8px 18px' }}>
-        {s.round && s.phase !== 'lobby' ? (s.round.kind === 'bonus' ? '⭐ Bonus round' : `Round ${s.round.index}`) : s.game.name}
+        {s.phase === 'lobby' || s.phase === 'intro' || s.phase === 'finished'
+          ? s.game.name
+          : <>{s.stage.name}{s.round && s.phase !== 'stageEnd' ? (s.round.kind === 'bonus' ? ' · ⭐ Bonus song' : ` · Song ${s.round.index}`) : ''}</>}
       </div>
     </div>
   );
@@ -62,7 +64,9 @@ function TopBar({ s, title }: { s: PublicState; title?: React.ReactNode }) {
 function Screen({ s, serverNow }: { s: PublicState; serverNow: () => number }) {
   switch (s.phase) {
     case 'lobby': return <Lobby s={s} />;
-    case 'intro': return <Intro target={s.settings.targetCards} seconds={s.settings.roundSeconds} />;
+    case 'intro': return <Intro target={s.settings.targetCards} seconds={s.settings.roundSeconds} winBonus={s.settings.winBonus} rounds={s.stage.count} startYears={s.stage.startYears} />;
+    case 'stageIntro': return <StageIntro s={s} />;
+    case 'stageEnd': return <StageEnd s={s} />;
     case 'ready':
     case 'playing': return <Playing s={s} serverNow={serverNow} />;
     case 'answers': return <Answers s={s} />;
@@ -271,8 +275,11 @@ function Scoreboard({ s }: { s: PublicState }) {
             <div key={t.id} className="row fadeup" style={{ height: rowH, gap: 22, padding: '0 22px', borderRadius: 22, animationDelay: `${i * 50}ms`, background: rank === 1 ? 'rgba(255,214,107,0.12)' : 'rgba(255,255,255,0.06)', border: tied ? '2px solid var(--yellow)' : '1px solid var(--line)' }}>
               <div style={{ width: 54, fontSize: Math.min(40, rowH * 0.4), fontWeight: 800, color: rank === 1 ? 'var(--yellow)' : rank <= 3 ? '#fff' : 'var(--muted)' }}>{rank}</div>
               <Avatar team={t} size={rowH - 18} />
-              <div style={{ width: 290, minWidth: 0 }}>
-                <div style={{ fontWeight: 800, fontSize: Math.min(30, rowH * 0.32), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</div>
+              <div style={{ width: 330, minWidth: 0 }}>
+                <div className="row" style={{ gap: 0, minWidth: 0 }}>
+                  <span style={{ fontWeight: 800, fontSize: Math.min(30, rowH * 0.32), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{t.name}</span>
+                  <Medals wins={t.wins} size={Math.min(30, rowH * 0.3)} />
+                </div>
                 <div style={{ fontSize: Math.min(22, rowH * 0.24), fontWeight: 700 }}>
                   <span style={{ color: 'var(--yellow)' }}>{t.points} pts</span> <span className="muted">· {t.timeline.length}/{target} cards</span>
                 </div>
@@ -304,25 +311,105 @@ function Confetti() {
   );
 }
 
-function Finished({ s }: { s: PublicState }) {
+function StageIntro({ s }: { s: PublicState }) {
+  const ys = s.stage.startYears;
+  return (
+    <>
+      <TopBar s={s} />
+      <div className="center" style={{ position: 'absolute', inset: 0, alignContent: 'center', gap: 26 }}>
+        <div className="pop" style={{ fontSize: 40, fontWeight: 700, color: 'var(--rose)' }}>Round {s.stage.index + 1} of {s.stage.count}</div>
+        <div className="pop" style={{ fontSize: 150, fontWeight: 800, letterSpacing: '-0.04em', lineHeight: 1 }}>{s.stage.name}</div>
+        <div className="row" style={{ gap: 30, marginTop: 10 }}>
+          {ys.map((y, i) => <GiftCard key={i} year={y} start width={300} className="pop" style={{ fontSize: 24, animationDelay: `${0.3 + i * 0.2}s`, transform: `rotate(${i ? 4 : -4}deg)` }} />)}
+        </div>
+        <div style={{ fontSize: 36, color: 'var(--muted)', maxWidth: 1200 }}>
+          Fresh timelines for everyone, starting with {ys.join(' and ')}. First to {s.settings.targetCards} cards wins <span style={{ color: 'var(--yellow)', fontWeight: 800 }}>+{s.settings.winBonus}</span> points.
+        </div>
+      </div>
+    </>
+  );
+}
+
+function StageEnd({ s }: { s: PublicState }) {
   const w = s.teams.find((t) => t.id === s.outcome?.winnerId);
+  const ranked = [...s.teams].sort((a, b) => b.points - a.points);
   return (
     <>
       <Confetti />
       <TopBar s={s} />
-      <div className="center" style={{ position: 'absolute', inset: 0, gap: 20, alignContent: 'center' }}>
-        <div style={{ fontSize: 56, fontWeight: 800 }}>And the winner is<span className="accent">…</span></div>
-        {w && (
-          <>
-            <div className="pop" style={{ transform: 'rotate(-3deg)' }}><TeamCard team={w} width={520} highlight /></div>
-            <div className="pop" style={{ fontSize: 100, fontWeight: 800, lineHeight: 1, letterSpacing: '-0.03em' }}>{w.name}</div>
-            <div style={{ fontSize: 32, color: 'var(--muted)' }}>{s.outcome?.message} · {w.points} pts</div>
-            <div style={{ width: 1500 }}>
-              <Track team={w} target={Math.max(w.timeline.length, 1)} cardW={Math.min(130, Math.floor(1400 / Math.max(w.timeline.length, 1)) - 12)} />
+      <div style={{ position: 'absolute', top: 150, left: 64, right: 64, bottom: 60, display: 'grid', gridTemplateColumns: '1.15fr 1fr', gap: 60, alignItems: 'center' }}>
+        <div className="center" style={{ gap: 18 }}>
+          <div style={{ fontSize: 44, fontWeight: 800 }}>{s.stage.name} <span className="accent">winner</span></div>
+          {w && (
+            <>
+              <div className="pop" style={{ position: 'relative', transform: 'rotate(-3deg)' }}>
+                <TeamCard team={w} width={560} highlight />
+                <div className="pop" style={{ position: 'absolute', right: -40, top: -40, animationDelay: '0.5s' }}><Medals wins={[s.stage.index + 1]} size={120} /></div>
+              </div>
+              <div style={{ fontSize: 84, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1 }}>{w.name}</div>
+              <div className="pill ok pop" style={{ fontSize: 34, padding: '10px 26px', animationDelay: '0.8s', background: 'rgba(255,214,107,0.2)', color: 'var(--yellow)' }}>+{s.settings.winBonus} points</div>
+            </>
+          )}
+        </div>
+        <div className="panel stack" style={{ padding: 26, gap: 10 }}>
+          <div style={{ fontSize: 30, fontWeight: 800, marginBottom: 6 }}>Total <span className="accent">points</span></div>
+          {ranked.slice(0, 10).map((t, i) => (
+            <div key={t.id} className="row fadeup" style={{ gap: 16, animationDelay: `${0.4 + i * 0.06}s`, fontSize: 26 }}>
+              <b style={{ width: 36, color: i === 0 ? 'var(--yellow)' : 'var(--muted)' }}>{i + 1}</b>
+              <Avatar team={t} size={48} />
+              <span className="grow" style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}<Medals wins={t.wins} size={26} /></span>
+              <b style={{ color: 'var(--yellow)' }}>{t.points}</b>
             </div>
-          </>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function Finished({ s }: { s: PublicState }) {
+  const ranked = [...s.teams].sort((a, b) => b.points - a.points || b.wins.length - a.wins.length);
+  const podium = [ranked[1], ranked[0], ranked[2]];
+  const heights = [300, 400, 230];
+  const place = [2, 1, 3];
+  const rest = ranked.slice(3, 12);
+  return (
+    <>
+      <Confetti />
+      <TopBar s={s} />
+      <div className="center" style={{ position: 'absolute', top: 110, left: 0, right: 0 }}>
+        <div style={{ fontSize: 60, fontWeight: 800, letterSpacing: '-0.03em' }}>The winner of the <span className="accent">night</span></div>
+        <div style={{ fontSize: 28, color: 'var(--muted)', marginTop: 4 }}>{s.outcome?.message}</div>
+      </div>
+      <div className="row" style={{ position: 'absolute', left: 0, right: rest.length ? 560 : 0, bottom: 60, justifyContent: 'center', alignItems: 'flex-end', gap: 26 }}>
+        {podium.map((t, i) =>
+          t ? (
+            <div key={t.id} className="center pop" style={{ gap: 12, animationDelay: `${[0.6, 1.2, 0.2][i]}s` }}>
+              <TeamCard team={t} width={i === 1 ? 360 : 280} highlight={i === 1} />
+              <div style={{ fontWeight: 800, fontSize: i === 1 ? 40 : 30, maxWidth: 380, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</div>
+              <div><Medals wins={t.wins} size={30} /></div>
+              <div style={{ width: i === 1 ? 360 : 280, height: heights[i], borderRadius: '24px 24px 0 0', background: i === 1 ? 'linear-gradient(#ffd66b, #f5a524)' : i === 0 ? 'linear-gradient(#e9ecf5, #aab0c8)' : 'linear-gradient(#ffb48a, #d9783f)', color: 'var(--navy)', display: 'grid', placeItems: 'start center', paddingTop: 20 }}>
+                <div style={{ fontSize: 80, fontWeight: 800, lineHeight: 1 }}>{place[i]}</div>
+                <div style={{ fontSize: 30, fontWeight: 800 }}>{t.points} pts</div>
+              </div>
+            </div>
+          ) : (
+            <div key={i} style={{ width: 280 }} />
+          ),
         )}
       </div>
+      {rest.length > 0 && (
+        <div className="panel stack" style={{ position: 'absolute', right: 64, top: 280, width: 480, padding: 22, gap: 10 }}>
+          {rest.map((t, i) => (
+            <div key={t.id} className="row" style={{ gap: 12, fontSize: 22 }}>
+              <b style={{ width: 30, color: 'var(--muted)' }}>{i + 4}</b>
+              <Avatar team={t} size={40} />
+              <span className="grow" style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}<Medals wins={t.wins} size={22} /></span>
+              <b style={{ color: 'var(--yellow)' }}>{t.points}</b>
+            </div>
+          ))}
+        </div>
+      )}
     </>
   );
 }

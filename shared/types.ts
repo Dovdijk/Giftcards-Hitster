@@ -1,17 +1,31 @@
 export type Phase =
   | 'lobby' // teams join
   | 'intro' // explanation animation on the show screen
-  | 'ready' // song loaded, waiting for the admin to press play
-  | 'playing' // 60 second guessing window
+  | 'stageIntro' // "Round 2" title card, timelines reset
+  | 'ready' // song loaded, waiting for the host to press play
+  | 'playing' // guessing window
   | 'answers' // all team answers on the show screen
-  | 'reveal' // correct answer shown, admin judges artist/title
+  | 'reveal' // correct answer shown, host judges artist/title
   | 'scoreboard' // timelines + points
-  | 'finished'; // winner
+  | 'stageEnd' // a team won this round
+  | 'finished'; // final results of the night
 
-export type RoundKind = 'normal' | 'bonus';
+export type TurnKind = 'normal' | 'bonus';
+
+/** A round of the night: its own song list, start cards and winner. */
+export interface Stage {
+  id: string;
+  name: string;
+  startYears: number[]; // 1 or 2 start cards
+}
+
+/** Special song lists next to the stages. */
+export const BONUS_LIST = 'bonus';
+export const MUSIC_LIST = 'music';
 
 export interface Song {
   id: string;
+  list: string; // stage id, BONUS_LIST or MUSIC_LIST
   spotifyId: string | null;
   spotifyUrl: string | null;
   title: string;
@@ -21,7 +35,7 @@ export interface Song {
   spotifyYear: number | null;
   musicbrainzYear: number | null;
   needsCheck: boolean; // year sources disagree or missing
-  bonus: boolean; // reserved for bonus rounds
+  startAt: number; // seconds, used for scoreboard music (chorus)
   used: boolean;
 }
 
@@ -35,7 +49,7 @@ export interface TimelineCard {
 
 export interface Answer {
   position: number | null; // insert index in the timeline (0..timeline.length)
-  yearGuess: number | null; // bonus rounds only
+  yearGuess: number | null; // bonus turns only
   artist: string;
   title: string;
   confirmed: boolean;
@@ -47,9 +61,11 @@ export interface Judgment {
   title: boolean | null;
 }
 
-export interface Round {
-  index: number;
-  kind: RoundKind;
+/** One song being played. */
+export interface Turn {
+  index: number; // song number within the stage
+  stage: number; // stage index
+  kind: TurnKind;
   songId: string;
   participants: string[];
   startedAt: number | null;
@@ -57,16 +73,15 @@ export interface Round {
   answers: Record<string, Answer>;
   judgments: Record<string, Judgment>;
   placementCorrect: Record<string, boolean>;
-  // snapshot of each team's timeline years when the round started
   timelineYears: Record<string, number[]>;
   committed: boolean;
 }
 
 export interface Settings {
-  defaultStartYear: number;
-  roundSeconds: number;
-  targetCards: number;
+  roundSeconds: number; // music + answer time per song
+  targetCards: number; // cards needed to win a round (start cards included)
   answersSeconds: number; // how long team answers are shown before the reveal
+  winBonus: number; // points for winning a round
   joinOpen: boolean;
 }
 
@@ -74,16 +89,19 @@ export interface TeamPublic {
   id: string;
   name: string;
   photoVersion: number; // 0 = no photo
-  startYear: number | null; // null = default
+  startYears: number[] | null; // per-team override, null = stage default
   timeline: TimelineCard[];
-  points: number;
+  points: number; // total for the night
+  stagePoints: number; // artist/title points in the current round (tie-breaker)
+  wins: number[]; // round numbers (1-based) this team won
   connected: boolean;
 }
 
 export interface Outcome {
   winnerId: string | null;
-  tiedTeamIds: string[]; // teams going into a bonus round
+  tiedTeamIds: string[]; // teams going into a bonus turn, or sharing the final win
   message: string;
+  stage: number | null; // stage that was won, null for the final result
 }
 
 /** What the show screen and players receive: never contains the song before the reveal. */
@@ -92,31 +110,33 @@ export interface PublicState {
   phase: Phase;
   serverNow: number;
   settings: Settings;
+  stage: { index: number; count: number; name: string; startYears: number[] };
   teams: TeamPublic[];
   round: null | {
     index: number;
-    kind: RoundKind;
+    stage: number;
+    kind: TurnKind;
     participants: string[];
     startedAt: number | null;
     endsAt: number | null;
     confirmedTeamIds: string[];
     answeredTeamIds: string[];
-    // only from 'answers' on
     answers: Record<string, Answer> | null;
     timelineYears: Record<string, number[]> | null;
-    // only from 'reveal' on
     song: Pick<Song, 'title' | 'artist' | 'year' | 'coverUrl'> | null;
     placementCorrect: Record<string, boolean> | null;
     judgments: Record<string, Judgment> | null;
   };
   outcome: Outcome | null;
-  pendingBonus: string[]; // tied teams waiting for a bonus round
-  songsLeft: number;
+  pendingBonus: string[];
+  songsLeft: number; // in the current stage
 }
 
 export interface AdminState extends PublicState {
   songs: Song[];
+  stages: Stage[];
   currentSongId: string | null;
+  musicSongId: string | null; // scoreboard music to play now
 }
 
 export interface PlayerState extends PublicState {
@@ -134,6 +154,7 @@ export interface GameSummary {
   phase: Phase;
   teams: number;
   songs: number;
+  stages: number;
   songsToCheck: number;
   bonusSongs: number;
 }

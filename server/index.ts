@@ -296,7 +296,7 @@ async function main() {
   function registerAdmin(socket: Socket, entry: Entry) {
     const game = entry.game;
     socket.on('admin', (action: { type: string; [k: string]: any }, ack) => {
-      if (action?.type === 'importSongs') return importSongs(entry, String(action.text ?? ''), ack);
+      if (action?.type === 'importSongs') return importSongs(entry, String(action.text ?? ''), String(action.list ?? ''), ack);
       reply(ack, () => {
         const a = action ?? { type: '' };
         switch (a.type) {
@@ -305,7 +305,13 @@ async function main() {
           case 'updateSong': return game.updateSong(a.songId, a.patch ?? {});
           case 'removeSong': return game.removeSong(a.songId);
           case 'moveSong': return game.moveSong(a.songId, Number(a.delta) || 0);
-          case 'shuffleSongs': return game.shuffleSongs();
+          case 'shuffleSongs': return game.shuffleSongs(String(a.list ?? ''));
+          case 'addStage': return game.addStage();
+          case 'updateStage': return game.updateStage(a.stageId, a.patch ?? {});
+          case 'removeStage': return game.removeStage(a.stageId);
+          case 'moveStage': return game.moveStage(a.stageId, Number(a.delta) || 0);
+          case 'nextStage': return game.nextStage();
+          case 'finishEvening': return game.finishEvening();
           case 'updateTeam': return game.adminUpdateTeam(a.teamId, a.patch ?? {});
           case 'removeTeam': {
             delete entry.photos[a.teamId];
@@ -340,6 +346,7 @@ async function main() {
 
   function manualSong(s: any): NewSong {
     const year = s?.year ? Number(s.year) : null;
+    const startAt = Math.max(0, Math.round(Number(s?.startAt) || 0));
     const ids = extractSpotifyTrackIds(String(s?.spotifyUrl ?? ''));
     if (!String(s?.title ?? '').trim()) throw new GameError('Title is required');
     return {
@@ -352,12 +359,13 @@ async function main() {
       spotifyYear: null,
       musicbrainzYear: null,
       needsCheck: false,
-      bonus: !!s.bonus,
+      list: String(s.list ?? ''),
+      startAt,
     };
   }
 
   const importing = new Set<string>();
-  async function importSongs(entry: Entry, text: string, ack: unknown) {
+  async function importSongs(entry: Entry, text: string, list: string, ack: unknown) {
     const cb = typeof ack === 'function' ? (ack as (r: unknown) => void) : () => {};
     const id = entry.meta.id;
     if (importing.has(id)) return cb({ ok: false, error: 'An import is already running' });
@@ -371,7 +379,9 @@ async function main() {
           : 'No Spotify track links found.',
       });
     }
-    const existing = new Set(entry.game.data.songs.map((s) => s.spotifyId));
+    if (!entry.game.data.stages.some((s) => s.id === list) && list !== 'bonus' && list !== 'music') return cb({ ok: false, error: 'Pick a song list first' });
+    // the same song may not be in two game lists (it would be played twice); music may repeat
+    const existing = new Set(entry.game.data.songs.filter((s) => (list === 'music' ? s.list === 'music' : s.list !== 'music')).map((s) => s.spotifyId));
     const todo = ids.filter((i) => !existing.has(i)).slice(0, 300);
     cb({ ok: true, result: { queued: todo.length, skipped: ids.length - todo.length } });
     importing.add(id);
@@ -380,7 +390,8 @@ async function main() {
       for (const trackId of todo) {
         if (!registry.byId(id)) break;
         const song = await resolveSpotifyTrack(trackId);
-        entry.game.addSongs([song]);
+        if (!entry.game.data.stages.some((s) => s.id === list) && list !== 'bonus' && list !== 'music') break;
+        entry.game.addSongs([{ ...song, list }]);
         done++;
         io.to(`g:${id}:admin`).emit('importProgress', { done, total: todo.length });
       }

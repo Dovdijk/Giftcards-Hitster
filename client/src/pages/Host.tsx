@@ -176,7 +176,7 @@ function GameCard({ g, i, mine, run }: { g: Summary; i: number; mine: boolean; r
       </div>
       <div style={{ padding: '0 18px 18px' }} className="stack">
         <div className="row wrap muted" style={{ fontSize: 14, gap: 14 }}>
-          <span>🎵 {g.songs} songs{g.bonusSongs ? ` (${g.bonusSongs} ⭐)` : ''}</span>
+          <span>🔁 {g.stages} round{g.stages === 1 ? '' : 's'}</span><span>🎵 {g.songs} songs{g.bonusSongs ? ` (${g.bonusSongs} ⭐)` : ''}</span>
           {g.songsToCheck > 0 && <span style={{ color: 'var(--yellow)' }}>⚠ {g.songsToCheck} to check</span>}
           <span>👥 {g.teams} teams</span>
         </div>

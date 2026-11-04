@@ -116,3 +116,26 @@ export function TimelineRow({ card, highlight }: { card: TimelineCard; highlight
     </div>
   );
 }
+
+/** Gold medals with the round number for every round a team won. */
+export function Medals({ wins, size = 26 }: { wins: number[]; size?: number }) {
+  if (!wins.length) return null;
+  return (
+    <span style={{ display: 'inline-flex', gap: size * 0.18, verticalAlign: 'middle', marginLeft: size * 0.3, flex: 'none' }}>
+      {wins.map((w, i) => (
+        <span
+          key={i}
+          title={`Won round ${w}`}
+          style={{
+            width: size, height: size, borderRadius: '50%', display: 'inline-grid', placeItems: 'center',
+            background: 'radial-gradient(circle at 35% 30%, #fff6c4, #ffd23f 45%, #d99a00 100%)',
+            boxShadow: `0 0 0 ${Math.max(1.5, size / 14)}px #b07c00, 0 ${size / 8}px ${size / 3}px rgba(255,200,0,0.45)`,
+            color: '#5a3d00', fontWeight: 800, fontSize: size * 0.55, lineHeight: 1,
+          }}
+        >
+          {w}
+        </span>
+      ))}
+    </span>
+  );
+}

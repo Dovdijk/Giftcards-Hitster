@@ -6,10 +6,11 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
  */
 
 interface Controller {
-  loadUri(uri: string): void;
+  loadUri(uri: string, preferVideo?: boolean, startAt?: number): void;
   play(): void;
   resume(): void;
   pause(): void;
+  seek(seconds: number): void;
   togglePlay(): void;
   addListener(ev: string, cb: (e: any) => void): void;
   destroy(): void;
@@ -44,15 +45,20 @@ export interface PlaybackInfo {
   playing: boolean;
   position: number;
   duration: number;
+  trackId: string | null;
 }
 
-export const SpotifyPlayer = forwardRef<PlayerHandle, { trackId: string | null; onPlayback?: (p: PlaybackInfo) => void }>(function SpotifyPlayer(
-  { trackId, onPlayback },
-  ref,
-) {
+interface Props {
+  trackId: string | null;
+  startAt?: number; // seconds
+  autoplay?: boolean; // start right after loading (scoreboard music)
+  onPlayback?: (p: PlaybackInfo) => void;
+}
+
+export const SpotifyPlayer = forwardRef<PlayerHandle, Props>(function SpotifyPlayer({ trackId, startAt = 0, autoplay, onPlayback }, ref) {
   const holder = useRef<HTMLDivElement>(null);
   const ctrl = useRef<Controller | null>(null);
-  const loadedUri = useRef<string | null>(null);
+  const loaded = useRef<{ uri: string; startAt: number; seeked: boolean } | null>(null);
   const cb = useRef(onPlayback);
   cb.current = onPlayback;
   const [ready, setReady] = useState(false);
@@ -63,14 +69,21 @@ export const SpotifyPlayer = forwardRef<PlayerHandle, { trackId: string | null; 
     pause: () => ctrl.current?.pause(),
   }));
 
+  const load = (c: Controller, uri: string) => {
+    loaded.current = { uri, startAt, seeked: startAt === 0 };
+    c.loadUri(uri, false, startAt);
+    if (autoplay) setTimeout(() => ctrl.current?.play(), 700);
+  };
+
   useEffect(() => {
-    if (!trackId) return;
+    if (!trackId) {
+      ctrl.current?.pause();
+      return;
+    }
     const uri = `spotify:track:${trackId}`;
     if (ctrl.current) {
-      if (loadedUri.current !== uri) {
-        ctrl.current.loadUri(uri);
-        loadedUri.current = uri;
-      }
+      if (loaded.current?.uri !== uri) load(ctrl.current, uri);
+      else if (autoplay) ctrl.current.play();
       return;
     }
     let cancelled = false;
@@ -82,12 +95,26 @@ export const SpotifyPlayer = forwardRef<PlayerHandle, { trackId: string | null; 
       holder.current.appendChild(el);
       api.createController(el, { uri, width: '100%', height: 152 }, (c: Controller) => {
         ctrl.current = c;
-        loadedUri.current = uri;
         setReady(true);
         setFailed(false);
+        loaded.current = { uri, startAt, seeked: startAt === 0 };
+        if (startAt || autoplay) load(c, uri);
         c.addListener('playback_update', (e: any) => {
           const d = e?.data ?? {};
-          cb.current?.({ playing: !d.isPaused && !d.isBuffering, position: d.position ?? 0, duration: d.duration ?? 0 });
+          const l = loaded.current;
+          // older embed versions ignore startAt: jump to the chorus once playback starts
+          if (l && !l.seeked && !d.isPaused && (d.position ?? 0) < l.startAt * 1000 - 3000) {
+            l.seeked = true;
+            c.seek(l.startAt);
+          } else if (l && !d.isPaused) {
+            l.seeked = true;
+          }
+          cb.current?.({
+            playing: !d.isPaused && !d.isBuffering,
+            position: d.position ?? 0,
+            duration: d.duration ?? 0,
+            trackId: l?.uri.split(':').pop() ?? null,
+          });
         });
       });
     });
@@ -95,11 +122,9 @@ export const SpotifyPlayer = forwardRef<PlayerHandle, { trackId: string | null; 
       cancelled = true;
       clearTimeout(timeout);
     };
-  }, [trackId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trackId, startAt, autoplay]);
 
-  if (!trackId) {
-    return <div className="panel muted" style={{ padding: 14 }}>No Spotify link for this song. Play it manually, then press “Start timer”.</div>;
-  }
   return (
     <div>
       <div ref={holder} style={{ minHeight: 152, borderRadius: 12, overflow: 'hidden', background: 'rgba(255,255,255,0.05)' }} />

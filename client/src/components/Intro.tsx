@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Vinyl, Wordmark } from './common';
-import { GiftCard } from './giftcard';
+import { GiftCard, Medals } from './giftcard';
 
 /** Looping explanation shown on the big screen before the first song. */
-export default function Intro({ target, seconds }: { target: number; seconds: number }) {
+export default function Intro({ target, seconds, winBonus, rounds, startYears }: { target: number; seconds: number; winBonus: number; rounds: number; startYears: number[] }) {
   const steps = [
     { title: <>Welcome to <span className="accent">Hitster Night!</span></>, text: 'Music, memories and a little bit of competition.', visual: <Vinyl size={360} spinning label="♪" /> },
-    { title: <>Every team starts with <span className="accent">one year</span></>, text: 'That card is the start of your timeline.', visual: <Cards years={[1987]} /> },
+    { title: <>Every team starts with <span className="accent">{startYears.length === 1 ? 'one year' : 'two years'}</span></>, text: 'That is the start of your timeline.', visual: <Cards years={startYears} start /> },
     { title: <>Listen <span className="accent">carefully</span></>, text: `A song plays. No title, no artist. You have ${seconds} seconds.`, visual: <Vinyl size={360} spinning /> },
     { title: <>Drag it to the <span className="accent">right spot</span></>, text: 'Before or after? Place the song in your timeline on your phone.', visual: <DragDemo /> },
     { title: <>Bonus <span className="accent">points</span></>, text: 'Name the artist: +100. Name the title: +100.', visual: <Points /> },
     { title: <>Right spot? <span className="accent">Card is yours</span></>, text: 'Every correct placement grows your timeline.', visual: <Cards years={[1979, 1987, 1995, 2004]} pop={2} /> },
-    { title: <>First to <span className="accent">{target} cards</span> wins</>, text: 'Same round? Most points wins. Still a tie? Bonus round: closest to the exact year!', visual: <div style={{ fontSize: 260 }}>🏆</div> },
+    { title: <>First to <span className="accent">{target} cards</span> wins the round</>, text: `Round winner: +${winBonus} points and a gold medal. Tie? Bonus song: closest to the exact year!`, visual: <Medals wins={[1]} size={300} /> },
+    { title: <>{rounds > 1 ? <>{rounds} rounds, </> : null}most <span className="accent">points</span> wins the night</>, text: 'Points carry over between rounds. Every round starts with a fresh timeline.', visual: <div style={{ fontSize: 260 }}>🏆</div> },
   ];
   const [i, setI] = useState(0);
   useEffect(() => {
@@ -43,12 +44,12 @@ function Card({ year, start, style, className, width = 250 }: { year: number | s
   return <GiftCard year={year} start={start} mystery={year === '?'} width={width} className={className} style={{ fontSize: 26, ...style }} />;
 }
 
-function Cards({ years, pop }: { years: number[]; pop?: number }) {
+function Cards({ years, pop, start }: { years: number[]; pop?: number; start?: boolean }) {
   return (
     <div className="row" style={{ gap: 14, position: 'relative' }}>
       <div style={{ position: 'absolute', left: -30, right: -30, top: '50%', height: 6, borderRadius: 6, background: 'linear-gradient(90deg, var(--pink), var(--rose), var(--sky))' }} />
       {years.map((y, k) => (
-        <Card key={k} width={years.length > 1 ? 190 : 300} year={y} start={y === 1987} className={k === pop ? 'pop' : undefined} style={k === pop ? { outline: '6px solid var(--mint)', animationDelay: '0.9s' } : undefined} />
+        <Card key={k} width={years.length > 2 ? 190 : years.length === 2 ? 260 : 300} year={y} start={start || y === 1987} className={k === pop ? 'pop' : undefined} style={k === pop ? { outline: '6px solid var(--mint)', animationDelay: '0.9s' } : undefined} />
       ))}
     </div>
   );

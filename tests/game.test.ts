@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Game, isPlacementCorrect } from '../server/game.js';
 
-const song = (title: string, year: number, bonus = false) => ({
+const mk = (list: string) => (title: string, year: number) => ({
   spotifyId: null, spotifyUrl: null, title, artist: 'A', coverUrl: null, year,
-  spotifyYear: null, musicbrainzYear: null, needsCheck: false, bonus,
+  spotifyYear: null, musicbrainzYear: null, needsCheck: false, list, startAt: 0,
 });
 
 test('placement rule', () => {
@@ -30,53 +30,89 @@ function play(g: Game, answers: Record<string, any>, judge: Record<string, [bool
   g.commit();
 }
 
-test('full game, tie on cards & points, bonus round decides', () => {
+test('songs play in the set order, round winner gets the bonus and a medal, next round resets timelines', () => {
   const g = new Game();
   g.updateSettings({ targetCards: 3 });
-  g.addSongs([song('s1', 1990), song('s2', 2000), song('s3', 1970), song('b1', 1984, true), song('b2', 1999, true)]);
+  const s1 = g.data.stages[0].id;
+  g.addStage();
+  const s2 = g.data.stages[1].id;
+  g.updateStage(s2, { startYears: [1980, 2000] });
+  g.addSongs([mk(s1)('first', 1990), mk(s1)('second', 2000), mk(s1)('third', 1970)]);
+  g.addSongs([mk(s2)('r2a', 1990), mk(s2)('r2b', 2010)]);
+  const a = g.join('A').id;
+  const b = g.join('B').id;
+  g.startShow();
+  assert.equal(g.team(a)!.timeline.length, 1);
+  play(g, { [a]: { position: 1 }, [b]: { position: 0 } }, { [a]: [true, false] });
+  assert.equal(g.data.songs.find((s) => s.title === 'first')!.used, true);
+  assert.equal(g.data.songs.find((s) => s.title === 'second')!.used, false);
+  assert.equal(g.data.phase, 'scoreboard');
+  play(g, { [a]: { position: 2 }, [b]: { position: 1 } });
+  assert.equal(g.data.phase, 'stageEnd');
+  assert.equal(g.data.outcome!.winnerId, a);
+  assert.deepEqual(g.team(a)!.wins, [1]);
+  assert.equal(g.team(a)!.points, 1100);
+  g.nextStage();
+  assert.equal(g.data.phase, 'stageIntro');
+  assert.deepEqual(g.team(a)!.timeline.map((c) => c.year), [1980, 2000]);
+  assert.equal(g.team(a)!.points, 1100); // points carry over
+  g.nextSong();
+  assert.equal(g.data.songs.find((s) => s.id === g.round!.songId)!.title, 'r2a');
+  assert.equal(g.round!.index, 1);
+});
+
+test('tie on cards and round points goes to a bonus song, then the night is finished on total points', () => {
+  const g = new Game();
+  g.updateSettings({ targetCards: 2 });
+  const s1 = g.data.stages[0].id;
+  g.addSongs([mk(s1)('s1', 1995), mk('bonus')('b1', 1984)]);
   const a = g.join('A').id;
   const b = g.join('B').id;
   const c = g.join('C').id;
   g.startShow();
-  // round 1: 1990 -> after 1987 is position 1
-  play(g, { [a]: { position: 1 }, [b]: { position: 1 }, [c]: { position: 0 } }, { [a]: [true, false], [b]: [true, false] });
-  assert.equal(g.team(a)!.timeline.length, 2);
-  assert.equal(g.team(c)!.timeline.length, 1);
-  assert.equal(g.team(a)!.points, 100);
-  // round 2: 2000, timeline [1987,1990] -> position 2; unconfirmed draft still counts
-  play(g, { [a]: { position: 2 }, [b]: { position: 2 } });
-  // both have 3 cards & 100 points -> tie -> bonus
-  assert.deepEqual(new Set(g.data.pendingBonus), new Set([a, b]));
+  play(g, { [a]: { position: 1 }, [b]: { position: 1 } }, { [c]: [true, true] });
   assert.equal(g.data.phase, 'scoreboard');
-  // bonus: song b1 = 1984, both guess 3 off -> tie on year; A gets title -> A wins
+  assert.deepEqual(new Set(g.data.pendingBonus), new Set([a, b]));
   g.nextSong();
   assert.equal(g.round!.kind, 'bonus');
-  assert.deepEqual(g.round!.participants.sort(), [a, b].sort());
-  assert.throws(() => g.submitAnswer(c, { yearGuess: 1984 }, true));
-  g.startRound();
+  assert.throws(() => { g.startRound(); g.submitAnswer(c, { yearGuess: 1984 }, true); });
   g.submitAnswer(a, { yearGuess: 1981 }, true);
-  g.submitAnswer(b, { yearGuess: 1987 }, true); // all confirmed -> ends automatically
-  assert.equal(g.data.phase, 'answers');
+  g.submitAnswer(b, { yearGuess: 1987 }, true);
   g.reveal();
   g.judge(a, 'title', true);
   g.commit();
-  assert.equal(g.data.phase, 'finished');
+  assert.equal(g.data.phase, 'stageEnd');
   assert.equal(g.data.outcome!.winnerId, a);
+  assert.throws(() => g.nextStage(), /last round/);
+  g.finishEvening();
+  assert.equal(g.data.phase, 'finished');
+  assert.equal(g.data.outcome!.winnerId, a); // 1100 vs C's 200
 });
 
-test('single finisher wins, confirm requires position', () => {
+test('two start cards and confirm requires a position', () => {
   const g = new Game();
-  g.updateSettings({ targetCards: 2 });
-  g.addSongs([song('s1', 1995)]);
+  const s1 = g.data.stages[0].id;
+  g.updateStage(s1, { startYears: [2005, 1975] });
+  g.addSongs([mk(s1)('x', 1990)]);
   const a = g.join('A').id;
-  g.join('B');
   g.startShow();
+  assert.deepEqual(g.team(a)!.timeline.map((c) => c.year), [1975, 2005]);
   g.nextSong();
   g.startRound();
   assert.throws(() => g.submitAnswer(a, { title: 'x' }, true), /Drag/);
-  g.submitAnswer(a, { position: 1 }, true);
-  g.endRound();
-  g.reveal();
-  g.commit();
-  assert.equal(g.data.outcome!.winnerId, a);
+});
+
+test('old saved games are migrated', () => {
+  const old: any = {
+    phase: 'lobby',
+    settings: { defaultStartYear: 1979, roundSeconds: 60, targetCards: 10, answersSeconds: 6, joinOpen: true },
+    songs: [{ id: 'a', title: 'x', artist: 'y', year: 1990, bonus: false, used: false }, { id: 'b', title: 'z', artist: 'y', year: 1991, bonus: true, used: false }],
+    teams: [{ id: 't', token: 'k', name: 'T', photoVersion: 0, startYear: 2001, timeline: [], points: 0, connected: false }],
+    rounds: [], outcome: null, pendingBonus: [],
+  };
+  const g = new Game(old);
+  assert.deepEqual(g.data.stages[0].startYears, [1979]);
+  assert.equal(g.data.songs[0].list, g.data.stages[0].id);
+  assert.equal(g.data.songs[1].list, 'bonus');
+  assert.deepEqual(g.data.teams[0].startYears, [2001]);
 });

@@ -165,6 +165,7 @@ export async function resolveSpotifyTrack(trackId: string): Promise<NewSong> {
     spotifyYear: sy,
     musicbrainzYear: mb,
     needsCheck: !info || year === null || (sy !== null && mb !== null && sy !== mb) || !info.artist,
-    bonus: false,
+    list: '',
+    startAt: 0,
   };
 }

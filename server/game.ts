@@ -1,21 +1,25 @@
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import type {
-  AdminState,
-  GameInfo,
-  Answer,
-  Outcome,
-  Phase,
-  PlayerState,
-  PublicState,
-  Round,
-  Settings,
-  Song,
-  TeamPublic,
-  TimelineCard,
+import {
+  BONUS_LIST,
+  MUSIC_LIST,
+  type AdminState,
+  type Answer,
+  type GameInfo,
+  type Outcome,
+  type Phase,
+  type PlayerState,
+  type PublicState,
+  type Settings,
+  type Song,
+  type Stage,
+  type TeamPublic,
+  type TimelineCard,
+  type Turn,
 } from '../shared/types.js';
 
 export const MAX_TEAMS = 20;
+export const MAX_STAGES = 12;
 
 export interface Team extends TeamPublic {
   token: string;
@@ -24,25 +28,61 @@ export interface Team extends TeamPublic {
 export interface GameData {
   phase: Phase;
   settings: Settings;
+  stages: Stage[];
+  currentStage: number;
   songs: Song[];
   teams: Team[];
-  rounds: Round[];
+  rounds: Turn[]; // every song played tonight, across stages
   outcome: Outcome | null;
   pendingBonus: string[];
+  musicCursor: number; // which scoreboard song is next
 }
 
-const id = () => crypto.randomBytes(6).toString('base64url');
+export const newId = () => crypto.randomBytes(6).toString('base64url');
+
+export function freshStage(n: number, startYears = [1987]): Stage {
+  return { id: newId(), name: `Round ${n}`, startYears };
+}
 
 export function freshData(): GameData {
   return {
     phase: 'lobby',
-    settings: { defaultStartYear: 1987, roundSeconds: 60, targetCards: 10, answersSeconds: 6, joinOpen: true },
+    settings: { roundSeconds: 60, targetCards: 10, answersSeconds: 6, winBonus: 1000, joinOpen: true },
+    stages: [freshStage(1)],
+    currentStage: 0,
     songs: [],
     teams: [],
     rounds: [],
     outcome: null,
     pendingBonus: [],
+    musicCursor: 0,
   };
+}
+
+/** Bring games saved by older versions up to date. */
+function migrate(raw: any): GameData {
+  const d = { ...freshData(), ...raw } as GameData & Record<string, any>;
+  const legacyStart = raw?.settings?.defaultStartYear;
+  d.settings = { ...freshData().settings, ...(raw?.settings ?? {}) };
+  delete (d.settings as any).defaultStartYear;
+  if (!Array.isArray(raw?.stages) || raw.stages.length === 0) d.stages = [freshStage(1, [legacyStart ?? 1987])];
+  d.currentStage = Math.min(d.currentStage ?? 0, d.stages.length - 1);
+  d.songs = (d.songs ?? []).map((s: any) => ({
+    startAt: 0,
+    ...s,
+    list: s.list ?? (s.bonus ? BONUS_LIST : d.stages[0].id),
+  }));
+  for (const s of d.songs) delete (s as any).bonus;
+  d.teams = (d.teams ?? []).map((t: any) => ({
+    stagePoints: 0,
+    wins: [],
+    ...t,
+    startYears: t.startYears ?? (t.startYear ? [t.startYear] : null),
+  }));
+  for (const t of d.teams) delete (t as any).startYear;
+  d.rounds = (d.rounds ?? []).map((r: any) => ({ stage: 0, ...r }));
+  d.musicCursor ??= 0;
+  return d;
 }
 
 export class GameError extends Error {}
@@ -60,6 +100,8 @@ function hasContent(a: Answer | undefined) {
   return a.position !== null || a.yearGuess !== null || a.artist.trim() !== '' || a.title.trim() !== '';
 }
 
+const MUSIC_PHASES: Phase[] = ['scoreboard', 'stageEnd', 'stageIntro', 'finished'];
+
 export class Game extends EventEmitter {
   data: GameData;
   info: GameInfo = { id: '', code: '', name: '' };
@@ -67,7 +109,7 @@ export class Game extends EventEmitter {
 
   constructor(data?: GameData | null) {
     super();
-    this.data = data ? { ...freshData(), ...data, settings: { ...freshData().settings, ...data.settings } } : freshData();
+    this.data = data ? migrate(data) : freshData();
     for (const t of this.data.teams) t.connected = false;
     this.resumeTimers();
   }
@@ -76,8 +118,11 @@ export class Game extends EventEmitter {
   private changed() {
     this.emit('change');
   }
-  get round(): Round | null {
+  get round(): Turn | null {
     return this.data.rounds.at(-1) ?? null;
+  }
+  get stage(): Stage {
+    return this.data.stages[this.data.currentStage] ?? this.data.stages[0];
   }
   private song(songId: string) {
     return this.data.songs.find((s) => s.id === songId) ?? null;
@@ -89,15 +134,18 @@ export class Game extends EventEmitter {
     if (!token) return null;
     return this.data.teams.find((t) => t.token === token) ?? null;
   }
-  private startYearOf(t: Team) {
-    return t.startYear ?? this.data.settings.defaultStartYear;
-  }
   private gameStarted() {
     return this.data.phase !== 'lobby';
   }
-  private startCard(t: Team): TimelineCard {
-    return { year: this.startYearOf(t), songId: null, title: null, artist: null, coverUrl: null };
+  private startCards(t: Team): TimelineCard[] {
+    const years = (t.startYears?.length ? t.startYears : this.stage.startYears).slice(0, 2);
+    return [...years].sort((a, b) => a - b).map((year) => ({ year, songId: null, title: null, artist: null, coverUrl: null }));
   }
+  private stageSongs(stageIndex = this.data.currentStage) {
+    const sid = this.data.stages[stageIndex]?.id;
+    return this.data.songs.filter((s) => s.list === sid);
+  }
+  private playable = (s: Song) => !s.used && s.year !== null;
 
   private resumeTimers() {
     const r = this.round;
@@ -115,12 +163,14 @@ export class Game extends EventEmitter {
   private scheduleEnd(endsAt: number) {
     this.clearTimer();
     this.timer = setTimeout(() => this.endRound(), Math.max(0, endsAt - Date.now()));
+    this.timer.unref?.();
   }
   private scheduleReveal() {
     this.clearTimer();
     this.timer = setTimeout(() => {
       if (this.data.phase === 'answers') this.reveal();
     }, this.data.settings.answersSeconds * 1000);
+    this.timer.unref?.();
   }
 
   // ---------- teams ----------
@@ -129,16 +179,18 @@ export class Game extends EventEmitter {
     if (this.data.teams.length >= MAX_TEAMS) throw new GameError(`The game is full (${MAX_TEAMS} teams).`);
     const clean = name.trim().slice(0, 30) || `Team ${this.data.teams.length + 1}`;
     const team: Team = {
-      id: id(),
+      id: newId(),
       token: crypto.randomBytes(18).toString('base64url'),
       name: clean,
       photoVersion: 0,
-      startYear: null,
+      startYears: null,
       timeline: [],
       points: 0,
+      stagePoints: 0,
+      wins: [],
       connected: true,
     };
-    if (this.gameStarted()) team.timeline = [this.startCard(team)];
+    if (this.gameStarted()) team.timeline = this.startCards(team);
     this.data.teams.push(team);
     this.changed();
     return team;
@@ -167,14 +219,17 @@ export class Game extends EventEmitter {
     }
   }
 
-  adminUpdateTeam(teamId: string, patch: { name?: string; startYear?: number | null; points?: number }) {
+  private noSongsOnTimeline(t: Team) {
+    return t.timeline.every((c) => c.songId === null);
+  }
+
+  adminUpdateTeam(teamId: string, patch: { name?: string; startYears?: number[] | null; points?: number }) {
     const t = this.team(teamId);
     if (!t) throw new GameError('Unknown team');
     if (patch.name !== undefined) this.renameTeam(teamId, patch.name);
-    if (patch.startYear !== undefined) {
-      t.startYear = patch.startYear;
-      // keep the start card in sync while nothing else is on the timeline
-      if (this.gameStarted() && t.timeline.length <= 1) t.timeline = [this.startCard(t)];
+    if (patch.startYears !== undefined) {
+      t.startYears = patch.startYears?.length ? patch.startYears.slice(0, 2).map((y) => clampInt(y, 1000, 2100)) : null;
+      if (this.gameStarted() && this.noSongsOnTimeline(t)) t.timeline = this.startCards(t);
     }
     if (patch.points !== undefined && Number.isFinite(patch.points)) t.points = Math.round(patch.points);
     this.changed();
@@ -187,31 +242,85 @@ export class Game extends EventEmitter {
     this.changed();
   }
 
-  // ---------- settings & songs ----------
+  // ---------- settings, stages & songs ----------
   updateSettings(patch: Partial<Settings>) {
     const s = this.data.settings;
-    if (patch.defaultStartYear !== undefined) s.defaultStartYear = clampInt(patch.defaultStartYear, 1900, 2100);
     if (patch.roundSeconds !== undefined) s.roundSeconds = clampInt(patch.roundSeconds, 10, 600);
-    if (patch.targetCards !== undefined) s.targetCards = clampInt(patch.targetCards, 2, 30);
+    if (patch.targetCards !== undefined) s.targetCards = clampInt(patch.targetCards, 3, 30);
     if (patch.answersSeconds !== undefined) s.answersSeconds = clampInt(patch.answersSeconds, 1, 60);
+    if (patch.winBonus !== undefined) s.winBonus = clampInt(patch.winBonus, 0, 100000);
     if (patch.joinOpen !== undefined) s.joinOpen = !!patch.joinOpen;
-    if (patch.defaultStartYear !== undefined && this.gameStarted()) {
-      for (const t of this.data.teams) if (t.timeline.length <= 1 && t.startYear === null) t.timeline = [this.startCard(t)];
+    this.changed();
+  }
+
+  addStage() {
+    if (this.data.stages.length >= MAX_STAGES) throw new GameError(`Maximum ${MAX_STAGES} rounds`);
+    const prev = this.data.stages.at(-1);
+    this.data.stages.push(freshStage(this.data.stages.length + 1, prev ? [...prev.startYears] : [1987]));
+    this.changed();
+  }
+
+  updateStage(stageId: string, patch: { name?: string; startYears?: number[] }) {
+    const i = this.data.stages.findIndex((s) => s.id === stageId);
+    if (i < 0) throw new GameError('Unknown round');
+    const st = this.data.stages[i];
+    if (patch.name !== undefined) st.name = String(patch.name).trim().slice(0, 40) || st.name;
+    if (patch.startYears !== undefined) {
+      const ys = (patch.startYears ?? []).slice(0, 2).map((y) => clampInt(y, 1000, 2100));
+      if (ys.length === 0) throw new GameError('A round needs at least 1 start year');
+      st.startYears = ys;
+      // refresh untouched timelines of the round that is about to be played
+      if (i === this.data.currentStage && this.gameStarted()) {
+        for (const t of this.data.teams) if (this.noSongsOnTimeline(t)) t.timeline = this.startCards(t);
+      }
     }
     this.changed();
   }
 
+  removeStage(stageId: string) {
+    const i = this.data.stages.findIndex((s) => s.id === stageId);
+    if (i < 0) throw new GameError('Unknown round');
+    if (this.data.stages.length === 1) throw new GameError('A game needs at least 1 round');
+    if (this.gameStarted() && i <= this.data.currentStage) throw new GameError('This round has already been played');
+    this.data.songs = this.data.songs.filter((s) => s.list !== stageId);
+    this.data.stages.splice(i, 1);
+    this.changed();
+  }
+
+  moveStage(stageId: string, delta: number) {
+    const i = this.data.stages.findIndex((s) => s.id === stageId);
+    const j = i + delta;
+    if (i < 0 || j < 0 || j >= this.data.stages.length) return;
+    if (this.gameStarted() && Math.min(i, j) <= this.data.currentStage) throw new GameError('Played rounds cannot be moved');
+    const [s] = this.data.stages.splice(i, 1);
+    this.data.stages.splice(j, 0, s);
+    this.changed();
+  }
+
+  private validList(list: string) {
+    return list === BONUS_LIST || list === MUSIC_LIST || this.data.stages.some((s) => s.id === list);
+  }
+
   addSongs(songs: Omit<Song, 'id' | 'used'>[]) {
-    for (const s of songs) this.data.songs.push({ ...s, id: id(), used: false });
+    for (const s of songs) {
+      if (!this.validList(s.list)) throw new GameError('Unknown song list');
+      this.data.songs.push({ ...s, id: newId(), used: false });
+    }
     this.changed();
   }
 
   updateSong(songId: string, patch: Partial<Song>) {
     const s = this.song(songId);
     if (!s) throw new GameError('Unknown song');
-    const allowed: (keyof Song)[] = ['title', 'artist', 'year', 'coverUrl', 'bonus', 'used', 'needsCheck'];
+    if (patch.list !== undefined && !this.validList(patch.list)) throw new GameError('Unknown song list');
+    const allowed: (keyof Song)[] = ['title', 'artist', 'year', 'coverUrl', 'used', 'needsCheck', 'list', 'startAt'];
     for (const k of allowed) if (k in patch) (s as any)[k] = (patch as any)[k];
+    if ('startAt' in patch) s.startAt = clampInt(patch.startAt, 0, 1200);
     if ('year' in patch) s.needsCheck = false;
+    if ('list' in patch) {
+      // moved songs go to the end of their new list
+      this.data.songs = [...this.data.songs.filter((x) => x !== s), s];
+    }
     this.changed();
   }
 
@@ -221,38 +330,84 @@ export class Game extends EventEmitter {
     this.changed();
   }
 
+  /** Move a song up/down within its own list. */
   moveSong(songId: string, delta: number) {
-    const i = this.data.songs.findIndex((s) => s.id === songId);
-    const j = i + delta;
-    if (i < 0 || j < 0 || j >= this.data.songs.length) return;
-    const [s] = this.data.songs.splice(i, 1);
-    this.data.songs.splice(j, 0, s);
+    const s = this.song(songId);
+    if (!s) return;
+    const same = this.data.songs.filter((x) => x.list === s.list);
+    const i = same.indexOf(s);
+    const other = same[i + delta];
+    if (!other) return;
+    const a = this.data.songs.indexOf(s);
+    const b = this.data.songs.indexOf(other);
+    [this.data.songs[a], this.data.songs[b]] = [this.data.songs[b], this.data.songs[a]];
     this.changed();
   }
 
-  shuffleSongs() {
-    const unused = this.data.songs.filter((s) => !s.used);
-    const used = this.data.songs.filter((s) => s.used);
-    for (let i = unused.length - 1; i > 0; i--) {
+  shuffleSongs(list: string) {
+    const pick = this.data.songs.filter((s) => s.list === list && !s.used);
+    for (let i = pick.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [unused[i], unused[j]] = [unused[j], unused[i]];
+      [pick[i], pick[j]] = [pick[j], pick[i]];
     }
-    this.data.songs = [...used, ...unused];
+    const rest = this.data.songs.filter((s) => !(s.list === list && !s.used));
+    this.data.songs = [...rest, ...pick];
     this.changed();
   }
 
   // ---------- flow ----------
+  private resetForStage() {
+    for (const t of this.data.teams) {
+      t.timeline = this.startCards(t);
+      t.stagePoints = 0;
+    }
+    this.data.outcome = null;
+    this.data.pendingBonus = [];
+  }
+
   startShow() {
     if (this.data.phase !== 'lobby') throw new GameError('The show already started');
     if (this.data.teams.length === 0) throw new GameError('No teams have joined yet');
     for (const t of this.data.teams) {
-      t.timeline = [this.startCard(t)];
       t.points = 0;
+      t.wins = [];
     }
+    this.data.currentStage = 0;
     this.data.rounds = [];
-    this.data.outcome = null;
-    this.data.pendingBonus = [];
+    this.resetForStage();
     this.data.phase = 'intro';
+    this.changed();
+  }
+
+  /** After a round winner: on to the next round. */
+  nextStage() {
+    if (this.data.phase !== 'stageEnd') throw new GameError('Finish this round first');
+    if (this.data.currentStage >= this.data.stages.length - 1) throw new GameError('This was the last round');
+    this.data.currentStage++;
+    this.resetForStage();
+    this.data.musicCursor++;
+    this.data.phase = 'stageIntro';
+    this.changed();
+  }
+
+  /** Final results of the night: most points in total. */
+  finishEvening() {
+    if (!['stageEnd', 'scoreboard', 'stageIntro'].includes(this.data.phase)) throw new GameError('Not now');
+    this.clearTimer();
+    const teams = [...this.data.teams].sort((a, b) => b.points - a.points || b.wins.length - a.wins.length);
+    const top = teams[0];
+    const shared = top ? teams.filter((t) => t.points === top.points && t.wins.length === top.wins.length) : [];
+    this.data.outcome = top
+      ? {
+          winnerId: top.id,
+          tiedTeamIds: shared.length > 1 ? shared.map((t) => t.id) : [],
+          message: shared.length > 1 ? `Shared win: ${shared.map((t) => t.name).join(' & ')}!` : `${top.name} wins the night with ${top.points} points!`,
+          stage: null,
+        }
+      : null;
+    this.data.pendingBonus = [];
+    this.data.musicCursor++;
+    this.data.phase = 'finished';
     this.changed();
   }
 
@@ -260,25 +415,25 @@ export class Game extends EventEmitter {
     if (songId) {
       const s = this.song(songId);
       if (!s) throw new GameError('Unknown song');
+      if (s.list === MUSIC_LIST) throw new GameError('That is scoreboard music');
       if (s.year === null) throw new GameError(`"${s.title}" has no year yet`);
       return s;
     }
-    const usable = (s: Song) => !s.used && s.year !== null;
-    const pool =
-      kind === 'bonus'
-        ? this.data.songs.filter((s) => usable(s) && s.bonus)
-        : this.data.songs.filter((s) => usable(s) && !s.bonus);
-    // fall back to the other pool so the game never gets stuck
-    const fallback = this.data.songs.filter(usable);
-    const s = pool[0] ?? fallback[0];
-    if (!s) throw new GameError('No songs left with a year. Add songs in the Songs tab.');
+    const stagePool = this.stageSongs().filter(this.playable);
+    if (kind === 'bonus') {
+      const bonus = this.data.songs.filter((s) => s.list === BONUS_LIST && this.playable(s));
+      const s = bonus[0] ?? stagePool[0];
+      if (!s) throw new GameError('No bonus songs left. Add songs to the Bonus list.');
+      return s;
+    }
+    const s = stagePool[0];
+    if (!s) throw new GameError(`No songs with a year left in ${this.stage.name}. Add songs in the Songs tab.`);
     return s;
   }
 
   nextSong(songId?: string) {
-    const ok: Phase[] = ['intro', 'scoreboard', 'ready'];
-    if (!ok.includes(this.data.phase)) throw new GameError('Finish the current round first');
-    // replacing a round that never started: free its song again
+    const ok: Phase[] = ['intro', 'stageIntro', 'scoreboard', 'ready'];
+    if (!ok.includes(this.data.phase)) throw new GameError('Finish the current song first');
     const prev = this.round;
     if (this.data.phase === 'ready' && prev && !prev.startedAt) {
       const ps = this.song(prev.songId);
@@ -291,8 +446,10 @@ export class Game extends EventEmitter {
     const participants = bonus ? [...this.data.pendingBonus] : this.data.teams.map((t) => t.id);
     const timelineYears: Record<string, number[]> = {};
     for (const t of this.data.teams) timelineYears[t.id] = t.timeline.map((c) => c.year);
+    const stage = this.data.currentStage;
     this.data.rounds.push({
-      index: this.data.rounds.length + 1,
+      index: this.data.rounds.filter((r) => r.stage === stage).length + 1,
+      stage,
       kind: bonus ? 'bonus' : 'normal',
       songId: song.id,
       participants,
@@ -328,7 +485,7 @@ export class Game extends EventEmitter {
   submitAnswer(teamId: string, patch: Partial<Answer>, confirm: boolean) {
     const r = this.round;
     if (this.data.phase !== 'playing' || !r) throw new GameError('The round is not open');
-    if (!r.participants.includes(teamId)) throw new GameError('Your team is not playing this round');
+    if (!r.participants.includes(teamId)) throw new GameError('Your team is not playing this song');
     const prev = r.answers[teamId];
     if (prev?.confirmed) throw new GameError('Your answer is already locked in');
     const a: Answer = prev ?? { position: null, yearGuess: null, artist: '', title: '', confirmed: false, updatedAt: 0 };
@@ -346,7 +503,7 @@ export class Game extends EventEmitter {
     }
     a.updatedAt = Date.now();
     r.answers[teamId] = a;
-    // everybody locked in: no need to wait for the clock
+    // Everyone locked in: the answers show early, the music simply keeps playing.
     if (r.participants.every((p) => r.answers[p]?.confirmed)) {
       this.changed();
       this.endRound();
@@ -359,16 +516,11 @@ export class Game extends EventEmitter {
     const r = this.round;
     if (this.data.phase !== 'playing' || !r) return;
     this.clearTimer();
-    // unconfirmed answers with content still count; empty ones are dropped
-    for (const p of r.participants) {
-      const a = r.answers[p];
-      if (!hasContent(a)) delete r.answers[p];
-    }
+    for (const p of r.participants) if (!hasContent(r.answers[p])) delete r.answers[p];
     const song = this.song(r.songId)!;
     for (const p of r.participants) {
       const a = r.answers[p];
-      r.placementCorrect[p] =
-        r.kind === 'normal' && !!a && song.year !== null && isPlacementCorrect(r.timelineYears[p] ?? [], a.position, song.year);
+      r.placementCorrect[p] = r.kind === 'normal' && !!a && song.year !== null && isPlacementCorrect(r.timelineYears[p] ?? [], a.position, song.year);
       r.judgments[p] = { artist: null, title: null };
     }
     r.endsAt = Math.min(r.endsAt ?? Date.now(), Date.now());
@@ -387,7 +539,7 @@ export class Game extends EventEmitter {
   judge(teamId: string, field: 'artist' | 'title', value: boolean | null) {
     const r = this.round;
     if (!r || (this.data.phase !== 'reveal' && this.data.phase !== 'answers')) throw new GameError('Not judging right now');
-    if (!r.participants.includes(teamId)) throw new GameError('Team did not play this round');
+    if (!r.participants.includes(teamId)) throw new GameError('Team did not play this song');
     r.judgments[teamId] = { ...(r.judgments[teamId] ?? { artist: null, title: null }), [field]: value };
     this.changed();
   }
@@ -399,12 +551,12 @@ export class Game extends EventEmitter {
     this.changed();
   }
 
-  private roundPoints(r: Round, teamId: string) {
+  private roundPoints(r: Turn, teamId: string) {
     const j = r.judgments[teamId];
     return (j?.artist ? 100 : 0) + (j?.title ? 100 : 0);
   }
 
-  /** Apply the round: cards onto timelines, points, then decide winner / tie. */
+  /** Apply the song: cards onto timelines, points, then decide round winner / tie. */
   commit() {
     const r = this.round;
     if (this.data.phase !== 'reveal' || !r) throw new GameError('Reveal the answer first');
@@ -412,29 +564,41 @@ export class Game extends EventEmitter {
     for (const p of r.participants) {
       const t = this.team(p);
       if (!t) continue;
-      t.points += this.roundPoints(r, p);
+      const pts = this.roundPoints(r, p);
+      t.points += pts;
+      t.stagePoints += pts;
       if (r.kind === 'normal' && r.placementCorrect[p] && song.year !== null) {
-        const card: TimelineCard = { year: song.year, songId: song.id, title: song.title, artist: song.artist, coverUrl: song.coverUrl };
-        t.timeline.push(card);
+        t.timeline.push({ year: song.year, songId: song.id, title: song.title, artist: song.artist, coverUrl: song.coverUrl });
         t.timeline.sort((a, b) => a.year - b.year);
       }
     }
     r.committed = true;
-    this.decide(r);
-    this.data.phase = this.data.outcome?.winnerId ? 'finished' : 'scoreboard';
+    this.data.musicCursor++;
+    const winner = this.decide(r);
+    if (winner) {
+      winner.points += this.data.settings.winBonus;
+      winner.wins.push(this.data.currentStage + 1);
+      this.data.phase = 'stageEnd';
+    } else {
+      this.data.phase = 'scoreboard';
+    }
     this.changed();
   }
 
-  private decide(r: Round) {
+  /** Returns the round winner, or null (no winner yet / tie → bonus turn). */
+  private decide(r: Turn): Team | null {
     const target = this.data.settings.targetCards;
     const byId = (ids: string[]) => ids.map((i) => this.team(i)).filter((t): t is Team => !!t);
+    const stageNo = this.data.currentStage + 1;
     const win = (t: Team, message: string) => {
-      this.data.outcome = { winnerId: t.id, tiedTeamIds: [], message };
+      this.data.outcome = { winnerId: t.id, tiedTeamIds: [], message, stage: this.data.currentStage };
       this.data.pendingBonus = [];
+      return t;
     };
     const tie = (ids: string[], message: string) => {
-      this.data.outcome = { winnerId: null, tiedTeamIds: ids, message };
+      this.data.outcome = { winnerId: null, tiedTeamIds: ids, message, stage: this.data.currentStage };
       this.data.pendingBonus = ids;
+      return null;
     };
 
     if (r.kind === 'bonus') {
@@ -446,38 +610,36 @@ export class Game extends EventEmitter {
       };
       const best = Math.min(...players.map(diff));
       const closest = players.filter((t) => diff(t) === best);
-      if (closest.length === 1) return win(closest[0], `${closest[0].name} was closest to ${song.year}!`);
+      if (closest.length === 1) return win(closest[0], `${closest[0].name} was closest to ${song.year} and wins round ${stageNo}!`);
       const bestPts = Math.max(...closest.map((t) => this.roundPoints(r, t.id)));
       const top = closest.filter((t) => this.roundPoints(r, t.id) === bestPts);
-      if (top.length === 1) return win(top[0], `${top[0].name} wins on artist & title!`);
-      return tie(top.map((t) => t.id), 'Still a tie! Another bonus round.');
+      if (top.length === 1) return win(top[0], `${top[0].name} wins round ${stageNo} on artist & title!`);
+      return tie(top.map((t) => t.id), 'Still a tie! Another bonus song.');
     }
 
     const finishers = this.data.teams.filter((t) => t.timeline.length >= target);
     if (finishers.length === 0) {
-      // nothing left to play: most cards, then points
-      const left = this.data.songs.filter((s) => !s.used && s.year !== null).length;
+      const left = this.stageSongs().filter(this.playable).length;
       if (left === 0 && this.data.teams.length) {
         const most = Math.max(...this.data.teams.map((t) => t.timeline.length));
         const leaders = this.data.teams.filter((t) => t.timeline.length === most);
-        const pts = Math.max(...leaders.map((t) => t.points));
-        const top = leaders.filter((t) => t.points === pts);
-        if (top.length === 1) return win(top[0], `Out of songs! ${top[0].name} has the longest timeline.`);
-        return tie(top.map((t) => t.id), 'Out of songs and a tie! Add a bonus song.');
+        const pts = Math.max(...leaders.map((t) => t.stagePoints));
+        const top = leaders.filter((t) => t.stagePoints === pts);
+        if (top.length === 1) return win(top[0], `Out of songs! ${top[0].name} has the longest timeline and wins round ${stageNo}.`);
+        return tie(top.map((t) => t.id), 'Out of songs and a tie! Bonus song.');
       }
       this.data.outcome = null;
-      return;
+      return null;
     }
-    if (finishers.length === 1) return win(finishers[0], `${finishers[0].name} completed the timeline!`);
-    const pts = Math.max(...finishers.map((t) => t.points));
-    const top = finishers.filter((t) => t.points === pts);
-    if (top.length === 1) return win(top[0], `${top[0].name} wins on points!`);
-    return tie(top.map((t) => t.id), `It's a tie! Bonus round for ${top.map((t) => t.name).join(' & ')}.`);
+    if (finishers.length === 1) return win(finishers[0], `${finishers[0].name} completed the timeline and wins round ${stageNo}!`);
+    const pts = Math.max(...finishers.map((t) => t.stagePoints));
+    const top = finishers.filter((t) => t.stagePoints === pts);
+    if (top.length === 1) return win(top[0], `${top[0].name} wins round ${stageNo} on points!`);
+    return tie(top.map((t) => t.id), `It's a tie! Bonus song for ${top.map((t) => t.name).join(' & ')}.`);
   }
 
-  /** Admin can jump straight to the scoreboard from the lobby/intro/ready. */
   showScoreboard() {
-    if (!['intro', 'ready', 'scoreboard'].includes(this.data.phase)) throw new GameError('Not now');
+    if (!['intro', 'stageIntro', 'ready', 'scoreboard'].includes(this.data.phase)) throw new GameError('Not now');
     const r = this.round;
     if (this.data.phase === 'ready' && r && !r.startedAt) {
       const s = this.song(r.songId);
@@ -489,7 +651,13 @@ export class Game extends EventEmitter {
   }
 
   showIntro() {
-    if (!['scoreboard', 'intro', 'ready'].includes(this.data.phase)) throw new GameError('Not now');
+    if (!['scoreboard', 'intro', 'ready', 'stageIntro'].includes(this.data.phase)) throw new GameError('Not now');
+    const r = this.round;
+    if (this.data.phase === 'ready' && r && !r.startedAt) {
+      const s = this.song(r.songId);
+      if (s) s.used = false;
+      this.data.rounds.pop();
+    }
     this.data.phase = 'intro';
     this.changed();
   }
@@ -500,9 +668,12 @@ export class Game extends EventEmitter {
     for (const t of this.data.teams) {
       t.timeline = [];
       t.points = 0;
+      t.stagePoints = 0;
+      t.wins = [];
     }
     for (const s of this.data.songs) s.used = false;
     this.data.rounds = [];
+    this.data.currentStage = 0;
     this.data.outcome = null;
     this.data.pendingBonus = [];
     this.data.phase = 'lobby';
@@ -515,37 +686,48 @@ export class Game extends EventEmitter {
     return rest;
   }
 
+  musicSong(): Song | null {
+    if (!MUSIC_PHASES.includes(this.data.phase)) return null;
+    const list = this.data.songs.filter((s) => s.list === MUSIC_LIST && s.spotifyId);
+    if (!list.length) return null;
+    return list[this.data.musicCursor % list.length];
+  }
+
   publicState(): PublicState {
     const r = this.round;
     const phase = this.data.phase;
-    const afterPlay = ['answers', 'reveal', 'scoreboard', 'finished'].includes(phase);
-    const afterReveal = ['reveal', 'scoreboard', 'finished'].includes(phase);
+    const afterPlay = ['answers', 'reveal', 'scoreboard', 'stageEnd', 'finished'].includes(phase);
+    const afterReveal = ['reveal', 'scoreboard', 'stageEnd', 'finished'].includes(phase);
     const song = r ? this.song(r.songId) : null;
+    const st = this.stage;
     return {
       game: this.info,
       phase,
       serverNow: Date.now(),
       settings: this.data.settings,
+      stage: { index: this.data.currentStage, count: this.data.stages.length, name: st.name, startYears: st.startYears },
       teams: this.data.teams.map((t) => this.publicTeam(t)),
-      round: r
-        ? {
-            index: r.index,
-            kind: r.kind,
-            participants: r.participants,
-            startedAt: r.startedAt,
-            endsAt: r.endsAt,
-            confirmedTeamIds: Object.entries(r.answers).filter(([, a]) => a.confirmed).map(([k]) => k),
-            answeredTeamIds: Object.entries(r.answers).filter(([, a]) => hasContent(a)).map(([k]) => k),
-            answers: afterPlay ? r.answers : null,
-            timelineYears: afterPlay ? r.timelineYears : null,
-            song: afterReveal && song ? { title: song.title, artist: song.artist, year: song.year, coverUrl: song.coverUrl } : null,
-            placementCorrect: afterReveal ? r.placementCorrect : null,
-            judgments: afterReveal ? r.judgments : null,
-          }
-        : null,
+      round:
+        r && phase !== 'stageIntro' && phase !== 'intro' && phase !== 'lobby'
+          ? {
+              index: r.index,
+              stage: r.stage,
+              kind: r.kind,
+              participants: r.participants,
+              startedAt: r.startedAt,
+              endsAt: r.endsAt,
+              confirmedTeamIds: Object.entries(r.answers).filter(([, a]) => a.confirmed).map(([k]) => k),
+              answeredTeamIds: Object.entries(r.answers).filter(([, a]) => hasContent(a)).map(([k]) => k),
+              answers: afterPlay ? r.answers : null,
+              timelineYears: afterPlay ? r.timelineYears : null,
+              song: afterReveal && song ? { title: song.title, artist: song.artist, year: song.year, coverUrl: song.coverUrl } : null,
+              placementCorrect: afterReveal ? r.placementCorrect : null,
+              judgments: afterReveal ? r.judgments : null,
+            }
+          : null,
       outcome: this.data.outcome,
       pendingBonus: this.data.pendingBonus,
-      songsLeft: this.data.songs.filter((s) => !s.used && s.year !== null).length,
+      songsLeft: this.stageSongs().filter(this.playable).length,
     };
   }
 
@@ -554,14 +736,21 @@ export class Game extends EventEmitter {
     const r = this.round;
     const song = r ? this.song(r.songId) : null;
     if (pub.round && r) {
-      // the admin sees everything live
       pub.round.answers = r.answers;
       pub.round.timelineYears = r.timelineYears;
       pub.round.placementCorrect = r.placementCorrect;
       pub.round.judgments = r.judgments;
       pub.round.song = song ? { title: song.title, artist: song.artist, year: song.year, coverUrl: song.coverUrl } : null;
     }
-    return { ...pub, songs: this.data.songs, currentSongId: r && !r.committed ? r.songId : null };
+    // the game song keeps playing through answers and reveal; scoreboard screens get scoreboard music
+    const songPhases: Phase[] = ['ready', 'playing', 'answers', 'reveal'];
+    return {
+      ...pub,
+      songs: this.data.songs,
+      stages: this.data.stages,
+      currentSongId: r && songPhases.includes(this.data.phase) ? r.songId : null,
+      musicSongId: this.musicSong()?.id ?? null,
+    };
   }
 
   playerState(teamId: string | null, base?: PublicState): PlayerState {
@@ -571,7 +760,7 @@ export class Game extends EventEmitter {
     return {
       ...pub,
       me: t ? this.publicTeam(t) : null,
-      myAnswer: t && r ? (r.answers[t.id] ?? null) : null,
+      myAnswer: t && r && pub.round ? (r.answers[t.id] ?? null) : null,
     };
   }
 }
