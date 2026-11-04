@@ -331,6 +331,7 @@ async function main() {
           case 'startShow': return game.startShow();
           case 'showIntro': return game.showIntro();
           case 'nextSong': return game.nextSong(a.songId);
+          case 'practiceSong': return game.practiceSong();
           case 'startRound': return game.startRound();
           case 'addTime': return game.addTime(Number(a.seconds) || 15);
           case 'endRound': return game.endRound();
@@ -381,7 +382,7 @@ async function main() {
           : 'No Spotify track links found.',
       });
     }
-    if (!entry.game.data.stages.some((s) => s.id === list) && list !== 'bonus' && list !== 'music') return cb({ ok: false, error: 'Pick a song list first' });
+    if (!entry.game.data.stages.some((s) => s.id === list) && !['bonus', 'music', 'practice'].includes(list)) return cb({ ok: false, error: 'Pick a song list first' });
     // the same song may not be in two game lists (it would be played twice); music may repeat
     const existing = new Set(entry.game.data.songs.filter((s) => (list === 'music' ? s.list === 'music' : s.list !== 'music')).map((s) => s.spotifyId));
     const todo = ids.filter((i) => !existing.has(i)).slice(0, 300);
@@ -392,7 +393,7 @@ async function main() {
       for (const trackId of todo) {
         if (!registry.byId(id)) break;
         const song = await resolveSpotifyTrack(trackId);
-        if (!entry.game.data.stages.some((s) => s.id === list) && list !== 'bonus' && list !== 'music') break;
+        if (!entry.game.data.stages.some((s) => s.id === list) && !['bonus', 'music', 'practice'].includes(list)) break;
         entry.game.addSongs([{ ...song, list }]);
         done++;
         io.to(`g:${id}:admin`).emit('importProgress', { done, total: todo.length });

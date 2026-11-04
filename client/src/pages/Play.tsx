@@ -245,7 +245,7 @@ function Header({ state }: { state: PlayerState }) {
       </div>
       <span className="pill" style={{ textAlign: 'center', lineHeight: 1.2, maxWidth: '42%', fontSize: 12, flex: 'none' }}>
         {state.stage.name}
-        {state.round ? (state.round.kind === 'bonus' ? ' · Bonus' : ` · Song ${state.round.index}`) : ''}
+        {state.round ? (state.round.practice ? ' · Practice' : state.round.kind === 'bonus' ? ' · Bonus' : ` · Song ${state.round.index}`) : ''}
       </span>
     </div>
   );
@@ -261,7 +261,7 @@ function InGame({ state, emit, serverNow, toast }: { state: PlayerState; emit: R
     <div className="stack">
       <Header state={state} />
       {state.phase === 'intro' && <Notice title="Get ready!" text="Watch the big screen for how it works." vinyl />}
-      {state.phase === 'ready' && (participant ? <Notice title="Next song coming up…" text="Listen carefully!" vinyl /> : <BonusWatch state={state} />)}
+      {state.phase === 'ready' && (participant ? <Notice title={r?.practice ? '🎯 Practice song coming up' : 'Next song coming up…'} text={r?.practice ? "Try everything out, this one doesn't count." : 'Listen carefully!'} vinyl /> : <BonusWatch state={state} />)}
       {playing && participant && <AnswerForm key={r.index} state={state} emit={emit} serverNow={serverNow} toast={toast} />}
       {playing && !participant && <BonusWatch state={state} />}
       {state.phase === 'answers' && <Notice title="Time's up!" text="Look at the big screen…" />}
@@ -452,12 +452,12 @@ function AnswerForm({ state, emit, serverNow, toast }: { state: PlayerState; emi
   const answerFields = (
     <div className="panel stack">
       <label className="field">
-        <span>Artist <span style={{ fontWeight: 500 }}>(+100)</span></span>
+        <span>Artist {!r.practice && <span style={{ fontWeight: 500 }}>(+100)</span>}</span>
         <input className="input" value={artist} maxLength={80} autoComplete="off" onChange={(e) => { setArtist(e.target.value); sendDraft({ ...current(), artist: e.target.value }); }}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); titleRef.current?.focus(); } }} />
       </label>
       <label className="field">
-        <span>Title <span style={{ fontWeight: 500 }}>(+100)</span></span>
+        <span>Title {!r.practice && <span style={{ fontWeight: 500 }}>(+100)</span>}</span>
         <input ref={titleRef} className="input" value={title} maxLength={80} autoComplete="off" onChange={(e) => { setTitle(e.target.value); sendDraft({ ...current(), title: e.target.value }); }}
           onKeyDown={(e) => { if (e.key === 'Enter' && wide) { e.preventDefault(); tryConfirm(); } }} />
       </label>
@@ -474,8 +474,8 @@ function AnswerForm({ state, emit, serverNow, toast }: { state: PlayerState; emi
       <div className="panel row" style={{ padding: 12, gridColumn: wide ? '1 / -1' : undefined }}>
         <Ring seconds={left} total={state.settings.roundSeconds} size={64} />
         <div className="grow">
-          <div style={{ fontWeight: 800 }}>{bonus ? 'Bonus: guess the exact year' : 'Where does this song fit?'}</div>
-          <div className="muted" style={{ fontSize: 13 }}>{bonus ? 'Closest year wins.' : 'Drag the orange card into your timeline.'}</div>
+          <div style={{ fontWeight: 800 }}>{bonus ? 'Bonus: guess the exact year' : r.practice ? '🎯 Practice: where does it fit?' : 'Where does this song fit?'}</div>
+          <div className="muted" style={{ fontSize: 13 }}>{bonus ? 'Closest year wins.' : r.practice ? "Try it out: drag the orange card, fill in artist and title, confirm. This one doesn't count." : 'Drag the orange card into your timeline.'}</div>
         </div>
       </div>
 
@@ -590,7 +590,7 @@ function MyResult({ state }: { state: PlayerState }) {
   if (!playedThis || !song) return <Notice title="Answer revealed" text="Check the big screen!" />;
   const j = r.judgments?.[me.id];
   const a = r.answers?.[me.id];
-  const mark = (v: boolean | null | undefined) => (v === true ? <span className="pill ok pop">+100</span> : v === false ? <span className="pill bad">✗</span> : <span className="pill">judging…</span>);
+  const mark = (v: boolean | null | undefined) => (v === true ? <span className="pill ok pop">{r.practice ? '✓' : '+100'}</span> : v === false ? <span className="pill bad">✗</span> : <span className="pill">judging…</span>);
   return (
     <div className={`panel stack ${r.kind === 'normal' && !good ? 'anim-shake' : 'fadeup'}`}>
       {good && <Burst />}
@@ -604,13 +604,14 @@ function MyResult({ state }: { state: PlayerState }) {
       </div>
       {r.kind === 'normal' ? (
         <div className={`pill ${placed ? 'ok' : 'bad'}`} style={{ justifyContent: 'center', padding: 10, fontSize: 15 }}>
-          {placed ? '✓ Right spot! The card joins your timeline' : a ? '✗ Wrong spot this time' : '✗ No answer'}
+          {placed ? (r.practice ? '✓ Right spot! In the real game this card would join your timeline' : '✓ Right spot! The card joins your timeline') : a ? '✗ Wrong spot this time' : '✗ No answer'}
         </div>
       ) : (
         <div className="pill" style={{ justifyContent: 'center', padding: 10, fontSize: 15 }}>
           Your guess: {a?.yearGuess ?? '–'} ({a?.yearGuess ? `${Math.abs(a.yearGuess - (song.year ?? 0))} off` : 'no answer'})
         </div>
       )}
+      {r.practice && <div className="pill warn" style={{ justifyContent: 'center', padding: 8 }}>🎯 Practice: no points. The next song counts!</div>}
       {r.speedWinnerId === me.id && (
         <div className="pill pop" style={{ justifyContent: 'center', padding: 10, fontSize: 15, background: 'rgba(255,214,107,0.2)', color: 'var(--yellow)', animationDelay: '0.4s' }}>
           ⚡ Fastest right answer ({((r.speedMs ?? 0) / 1000).toFixed(1)}s): +{state.settings.speedBonus}

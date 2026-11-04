@@ -190,3 +190,31 @@ test('speed bonus: first team to lock in the right spot gets +50', async () => {
   assert.equal(last.id, 'champions');
   assert.equal(last.grand, true);
 });
+
+test('practice songs count for nothing and lead into round 1', () => {
+  const g = new Game();
+  const s1 = g.data.stages[0].id;
+  g.addSongs([mk('practice')('Warm-up 1', 1990), mk('practice')('Warm-up 2', 2000), mk(s1)('Real', 1995), mk(s1)('Real 2', 1970)]);
+  const a = g.join('A').id;
+  g.startShow();
+  assert.equal(g.publicState().practiceLeft, 2);
+  g.practiceSong();
+  assert.equal(g.publicState().round!.practice, true);
+  g.startRound();
+  g.submitAnswer(a, { position: 1, artist: 'A', title: 'Warm-up 1' }, true);
+  g.reveal();
+  g.judge(a, 'artist', true);
+  assert.equal(g.round!.speedWinnerId, null);
+  g.commit();
+  assert.equal(g.data.phase, 'stageIntro');
+  assert.equal(g.team(a)!.points, 0);
+  assert.equal(g.team(a)!.timeline.length, 1);
+  assert.equal(g.publicState().practiceLeft, 1);
+  // a normal song never picks practice songs, and numbering starts at 1
+  g.nextSong();
+  assert.equal(g.data.songs.find((x) => x.id === g.round!.songId)!.title, 'Real');
+  assert.equal(g.round!.index, 1);
+  g.startRound();
+  assert.equal(g.publicState().practiceLeft, 0);
+  assert.throws(() => g.practiceSong());
+});

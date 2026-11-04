@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BONUS_LIST, MUSIC_LIST, type AdminState, type Song, type Stage, type TeamPublic } from '../../../shared/types';
+import { BONUS_LIST, MUSIC_LIST, PRACTICE_LIST, type AdminState, type Song, type Stage, type TeamPublic } from '../../../shared/types';
 import { useCountdown, useGameSocket } from '../socket';
 import { Avatar, Offline, Ring, Wordmark, useToast } from '../components/common';
 import { Link, useParams } from 'react-router-dom';
@@ -114,7 +114,7 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
         <div className="panel stack">
           <div className="muted" style={{ fontSize: 13, fontWeight: 700 }}>{s.stage.name.toUpperCase()} · ROUND {s.stage.index + 1} OF {s.stage.count}</div>
           <div style={{ fontWeight: 800, fontSize: 20 }}>{phaseLabel[s.phase]}</div>
-          {r && <div className="muted">{r.kind === 'bonus' ? 'Bonus song' : `Song ${r.index}`} · {s.songsLeft} songs left in this round</div>}
+          {r && <div className="muted">{r.practice ? `Practice song ${r.index} · doesn't count` : <>{r.kind === 'bonus' ? 'Bonus song' : `Song ${r.index}`} · {s.songsLeft} songs left in this round</>}</div>}
           {s.outcome?.message && <div className="pill warn" style={{ whiteSpace: 'normal' }}>{s.outcome.message}</div>}
           {s.phase === 'playing' && left !== null && (
             <div className="row"><Ring seconds={left} total={s.settings.roundSeconds} size={80} /><div className="muted">{r?.confirmedTeamIds.length}/{players.length} locked in</div></div>
@@ -122,7 +122,10 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
 
           <div className="stack" style={{ gap: 8 }}>
             {s.phase === 'lobby' && <button className="btn big" onClick={() => act('startShow')} disabled={!s.teams.length}>Start show ({s.teams.length} teams)</button>}
-            {['intro', 'stageIntro', 'scoreboard'].includes(s.phase) && <button className="btn big" onClick={() => act('nextSong')}>{nextLabel}</button>}
+            {['intro', 'stageIntro'].includes(s.phase) && s.practiceLeft > 0 && (
+              <button className="btn big yellow" onClick={() => act('practiceSong')}>🎯 Practice song ({s.practiceLeft} left)</button>
+            )}
+            {['intro', 'stageIntro', 'scoreboard'].includes(s.phase) && <button className={`btn ${s.practiceLeft > 0 ? '' : 'big'}`} onClick={() => act('nextSong')}>{nextLabel}</button>}
             {s.phase === 'ready' && (
               <>
                 <div className="pill ok" style={{ whiteSpace: 'normal', padding: '12px 14px', fontSize: 15, lineHeight: 1.35 }}>
@@ -138,7 +141,7 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
               </div>
             )}
             {s.phase === 'answers' && <button className="btn big yellow" onClick={() => act('reveal')}>Reveal answer now</button>}
-            {s.phase === 'reveal' && <button className="btn big" onClick={() => act('commit')}>Done judging → scoreboard</button>}
+            {s.phase === 'reveal' && <button className="btn big" onClick={() => act('commit')}>{r?.practice ? 'Practice done → start the game' : 'Done judging → scoreboard'}</button>}
             {s.phase === 'stageEnd' && !lastStage && <button className="btn big" onClick={() => act('nextStage')}>▶ Start round {s.stage.index + 2}</button>}
             {s.phase === 'stageEnd' && <button className={`btn ${lastStage ? 'big yellow' : 'small ghost'}`} onClick={() => (lastStage || confirm('End the night now? The remaining rounds are skipped.')) && act('finishEvening')}>🏅 Awards & final results</button>}
             {s.phase === 'awards' && s.awards && (
@@ -356,7 +359,7 @@ function Songs({ s, act, socket, show }: { s: AdminState; act: Act; socket: Reac
   }, [socket]);
 
   // the selected round may have been deleted
-  const valid = listId === BONUS_LIST || listId === MUSIC_LIST || s.stages.some((x) => x.id === listId);
+  const valid = listId === BONUS_LIST || listId === MUSIC_LIST || listId === PRACTICE_LIST || s.stages.some((x) => x.id === listId);
   const list = valid ? listId : s.stages[0].id;
   const stageIndex = s.stages.findIndex((x) => x.id === list);
   const stage = stageIndex >= 0 ? s.stages[stageIndex] : null;
@@ -368,6 +371,7 @@ function Songs({ s, act, socket, show }: { s: AdminState; act: Act; socket: Reac
 
   const tabs = [
     ...s.stages.map((st, i) => ({ id: st.id, label: `${i + 1}. ${st.name}`, n: count(st.id) })),
+    { id: PRACTICE_LIST, label: '🎯 Practice', n: count(PRACTICE_LIST) },
     { id: BONUS_LIST, label: '⭐ Bonus', n: count(BONUS_LIST) },
     { id: MUSIC_LIST, label: '🎵 Scoreboard music', n: count(MUSIC_LIST) },
   ];
@@ -390,6 +394,7 @@ function Songs({ s, act, socket, show }: { s: AdminState; act: Act; socket: Reac
 
       <div className="stack">
         {stage && <StageSettings key={stage.id} stage={stage} index={stageIndex} total={s.stages.length} act={act} played={played} songs={count(stage.id)} needed={target} />}
+        {list === PRACTICE_LIST && <div className="panel muted">🎯 Practice songs are played before the first real song so everyone can try dragging and confirming. They give no points and no cards. Add 1 or 2; in the host panel you choose whether to play them.</div>}
         {list === BONUS_LIST && <div className="panel muted">⭐ Bonus songs are played only when teams tie: they guess the exact year, closest wins. Add a few (3 to 5).</div>}
         {isMusic && <div className="panel muted">🎵 These songs play on the scoreboard and winner screens, starting at the second you choose (e.g. the chorus). They rotate one per scoreboard.</div>}
 

@@ -33,10 +33,11 @@ export interface Stage {
 /** Special song lists next to the stages. */
 export const BONUS_LIST = 'bonus';
 export const MUSIC_LIST = 'music';
+export const PRACTICE_LIST = 'practice';
 
 export interface Song {
   id: string;
-  list: string; // stage id, BONUS_LIST or MUSIC_LIST
+  list: string; // stage id, BONUS_LIST, MUSIC_LIST or PRACTICE_LIST
   spotifyId: string | null;
   spotifyUrl: string | null;
   title: string;
@@ -87,6 +88,7 @@ export interface Turn {
   timelineYears: Record<string, number[]>;
   speedWinnerId: string | null; // first team to lock in the right spot
   speedMs: number | null; // how fast, from the start of the song
+  practice?: boolean; // warm-up song: no points, no cards
   committed: boolean;
 }
 
@@ -130,6 +132,7 @@ export interface PublicState {
     index: number;
     stage: number;
     kind: TurnKind;
+    practice: boolean;
     participants: string[];
     startedAt: number | null;
     endsAt: number | null;
@@ -146,6 +149,7 @@ export interface PublicState {
   outcome: Outcome | null;
   pendingBonus: string[];
   songsLeft: number; // in the current stage
+  practiceLeft: number; // practice songs that can still be played before the game starts
   awards: Award[] | null;
   awardIndex: number;
   awardCount: number;

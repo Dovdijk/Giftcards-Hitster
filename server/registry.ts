@@ -146,7 +146,7 @@ export class Registry extends EventEmitter {
       updatedAt: e.meta.updatedAt,
       phase: d.phase,
       teams: d.teams.length,
-      songs: d.songs.filter((s) => s.list !== 'music').length,
+      songs: d.songs.filter((s) => s.list !== 'music' && s.list !== 'practice').length,
       stages: d.stages.length,
       songsToCheck: d.songs.filter((s) => s.needsCheck && s.list !== 'music').length,
       bonusSongs: d.songs.filter((s) => s.list === 'bonus').length,

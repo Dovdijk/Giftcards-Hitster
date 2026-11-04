@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import {
   BONUS_LIST,
   MUSIC_LIST,
+  PRACTICE_LIST,
   type AdminState,
   type Answer,
   type Award,
@@ -306,7 +307,7 @@ export class Game extends EventEmitter {
   }
 
   private validList(list: string) {
-    return list === BONUS_LIST || list === MUSIC_LIST || this.data.stages.some((s) => s.id === list);
+    return list === BONUS_LIST || list === MUSIC_LIST || list === PRACTICE_LIST || this.data.stages.some((s) => s.id === list);
   }
 
   addSongs(songs: Omit<Song, 'id' | 'used'>[]) {
@@ -456,7 +457,7 @@ export class Game extends EventEmitter {
     const st = new Map<string, St>(teams.map((t) => [t.id, { artists: 0, wrong: 0, near: 0, lastSecond: 0, lockTimes: [] }]));
     let closest: { teamIds: string[]; dist: number; title: string; year: number } | null = null;
     for (const r of this.data.rounds) {
-      if (!r.committed) continue;
+      if (!r.committed || r.practice) continue;
       const song = this.song(r.songId);
       for (const p of r.participants) {
         const x = st.get(p);
@@ -497,7 +498,7 @@ export class Game extends EventEmitter {
     if (closest) add('close', '🤏', 'So Close!', 'The narrowest miss of the night', closest.teamIds, `${closest.title} (${closest.year}): only ${plural(closest.dist, 'year', 'years')} off`);
     const lastSecond = best((s) => s.lastSecond);
     if (lastSecond) add('lastsecond', '⏱️', 'Last Second Heroes', 'Most answers in the last 5 seconds', lastSecond.ids, plural(lastSecond.value, 'answer at the very last moment', 'answers at the very last moment'));
-    const turns = this.data.rounds.filter((r) => r.committed && r.kind === 'normal').length;
+    const turns = this.data.rounds.filter((r) => r.committed && r.kind === 'normal' && !r.practice).length;
     const minLocks = Math.max(2, Math.ceil(turns * 0.3));
     const avg = (s: St) => (s.lockTimes.length >= minLocks ? s.lockTimes.reduce((x, y) => x + y, 0) / s.lockTimes.length : Infinity);
     const fastest = best((s) => -avg(s), -Infinity);
@@ -530,6 +531,7 @@ export class Game extends EventEmitter {
       const s = this.song(songId);
       if (!s) throw new GameError('Unknown song');
       if (s.list === MUSIC_LIST) throw new GameError('That is scoreboard music');
+      if (s.list === PRACTICE_LIST) throw new GameError('That is a practice song');
       if (s.year === null) throw new GameError(`"${s.title}" has no year yet`);
       return s;
     }
@@ -562,11 +564,55 @@ export class Game extends EventEmitter {
     for (const t of this.data.teams) timelineYears[t.id] = t.timeline.map((c) => c.year);
     const stage = this.data.currentStage;
     this.data.rounds.push({
-      index: this.data.rounds.filter((r) => r.stage === stage).length + 1,
+      index: this.data.rounds.filter((r) => r.stage === stage && !r.practice).length + 1,
       stage,
       kind: bonus ? 'bonus' : 'normal',
       songId: song.id,
       participants,
+      startedAt: null,
+      endsAt: null,
+      answers: {},
+      judgments: {},
+      placementCorrect: {},
+      timelineYears,
+      speedWinnerId: null,
+      speedMs: null,
+      committed: false,
+    });
+    this.data.phase = 'ready';
+    this.changed();
+  }
+
+  /** Practice songs can be played until the first real song of the night. */
+  private practiceAllowed() {
+    return this.data.currentStage === 0 && !this.data.rounds.some((r) => !r.practice && r.startedAt);
+  }
+  private practiceSongs() {
+    return this.data.songs.filter((s) => s.list === PRACTICE_LIST && this.playable(s));
+  }
+
+  /** Warm-up song: plays like a normal song but gives no points and no cards. */
+  practiceSong() {
+    if (!['intro', 'stageIntro', 'ready'].includes(this.data.phase)) throw new GameError('Practice songs are played before the first song');
+    if (!this.practiceAllowed()) throw new GameError('The game has already started');
+    const prev = this.round;
+    if (this.data.phase === 'ready' && prev && !prev.startedAt) {
+      const ps = this.song(prev.songId);
+      if (ps) ps.used = false;
+      this.data.rounds.pop();
+    }
+    const song = this.practiceSongs()[0];
+    if (!song) throw new GameError('No practice songs left. Add them in Songs → Practice.');
+    song.used = true;
+    const timelineYears: Record<string, number[]> = {};
+    for (const t of this.data.teams) timelineYears[t.id] = t.timeline.map((c) => c.year);
+    this.data.rounds.push({
+      index: this.data.rounds.filter((r) => r.practice).length + 1,
+      stage: this.data.currentStage,
+      kind: 'normal',
+      practice: true,
+      songId: song.id,
+      participants: this.data.teams.map((t) => t.id),
       startedAt: null,
       endsAt: null,
       answers: {},
@@ -669,7 +715,7 @@ export class Game extends EventEmitter {
   private computeSpeed(r: Turn) {
     r.speedWinnerId = null;
     r.speedMs = null;
-    if (r.kind !== 'normal' || !r.startedAt || this.data.settings.speedBonus <= 0) return;
+    if (r.kind !== 'normal' || r.practice || !r.startedAt || this.data.settings.speedBonus <= 0) return;
     for (const p of r.participants) {
       const a = r.answers[p];
       if (!a?.confirmed || !r.placementCorrect[p]) continue;
@@ -690,6 +736,15 @@ export class Game extends EventEmitter {
   commit() {
     const r = this.round;
     if (this.data.phase !== 'reveal' || !r) throw new GameError('Reveal the answer first');
+    if (r.practice) {
+      // practice is over: nothing counts, on to the real thing
+      r.committed = true;
+      this.data.musicCursor++;
+      this.data.outcome = null;
+      this.data.phase = 'stageIntro';
+      this.changed();
+      return;
+    }
     const song = this.song(r.songId)!;
     for (const p of r.participants) {
       const t = this.team(p);
@@ -845,6 +900,7 @@ export class Game extends EventEmitter {
               index: r.index,
               stage: r.stage,
               kind: r.kind,
+              practice: !!r.practice,
               participants: r.participants,
               startedAt: r.startedAt,
               endsAt: r.endsAt,
@@ -862,6 +918,7 @@ export class Game extends EventEmitter {
       outcome: this.data.outcome,
       pendingBonus: this.data.pendingBonus,
       songsLeft: this.stageSongs().filter(this.playable).length,
+      practiceLeft: this.practiceAllowed() ? this.practiceSongs().length : 0,
       // awards are revealed one at a time
       awards: phase === 'awards' || phase === 'finished' ? (this.data.awards ?? []).slice(0, phase === 'awards' ? this.data.awardIndex + 1 : undefined) : null,
       awardIndex: this.data.awardIndex,
