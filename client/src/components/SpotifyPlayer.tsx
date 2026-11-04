@@ -93,7 +93,18 @@ export const SpotifyPlayer = forwardRef<PlayerHandle, Props>(function SpotifyPla
       const el = document.createElement('div');
       holder.current.innerHTML = '';
       holder.current.appendChild(el);
+      // Browsers only let a cross-site iframe start audio by itself when the page delegates it
+      // with allow="autoplay". Spotify creates the iframe itself, so add the permission the moment
+      // it is created (setting it later has no effect until the iframe reloads).
+      const origCreate = document.createElement.bind(document);
+      (document as any).createElement = (tag: string, opts?: ElementCreationOptions) => {
+        const node = origCreate(tag, opts);
+        if (String(tag).toLowerCase() === 'iframe') node.setAttribute('allow', 'autoplay; encrypted-media; clipboard-write; fullscreen; picture-in-picture');
+        return node;
+      };
+      setTimeout(() => ((document as any).createElement = origCreate), 0);
       api.createController(el, { uri, width: '100%', height: 152 }, (c: Controller) => {
+        (document as any).createElement = origCreate;
         ctrl.current = c;
         setReady(true);
         setFailed(false);

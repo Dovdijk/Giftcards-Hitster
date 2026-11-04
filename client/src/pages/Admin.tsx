@@ -115,6 +115,15 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auto, s.phase, turnKey]);
   const autoLeft = useCountdown(auto ? s.autoAt : null, serverNow);
+  // song loaded but still silent after a few seconds: ask the host to press play
+  const [needsClick, setNeedsClick] = useState(false);
+  useEffect(() => {
+    setNeedsClick(false);
+    if (s.phase !== 'ready' || !gameSong?.spotifyId) return;
+    const t = setTimeout(() => setNeedsClick(true), auto ? 5000 : 15000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.phase, turnKey]);
 
   const players = s.teams.filter((t) => r?.participants.includes(t.id));
   const lastStage = s.stage.index >= s.stage.count - 1;
@@ -209,6 +218,11 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
             </div>
           )}
         </div>
+        {needsClick && s.phase === 'ready' && (
+          <div className="pill warn pop" style={{ whiteSpace: 'normal', padding: '12px 14px', fontSize: 15, animation: 'pulse 1.2s ease-in-out infinite' }}>
+            🔇 The browser didn't let the song start by itself. Click ▶ in the Spotify player below; the timer starts with it.
+          </div>
+        )}
         <div style={{ display: nowPlaying?.spotifyId ? 'block' : 'none', position: 'relative' }}>
           <SpotifyPlayer ref={player} trackId={nowPlaying?.spotifyId ?? null} startAt={isMusic ? music!.startAt : 0} autoplay={isMusic} onPlayback={onPlayback} />
           {hidden && (
