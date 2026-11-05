@@ -86,6 +86,9 @@ const phaseText: Record<string, [string, string]> = {
   answers: ['Live', 'ok'],
   reveal: ['Live', 'ok'],
   scoreboard: ['Live', 'ok'],
+  stageIntro: ['Live', 'ok'],
+  stageEnd: ['Live', 'ok'],
+  awards: ['Live', 'ok'],
   finished: ['Finished', 'warn'],
 };
 
@@ -159,7 +162,7 @@ function Games({ me, onLogout }: { me: Me; onLogout: () => void }) {
 
 function GameCard({ g, i, mine, run }: { g: Summary; i: number; mine: boolean; run: (fn: () => Promise<unknown>, ok?: string) => void }) {
   const [c1, c2] = colorAt(i);
-  const [label, tone] = phaseText[g.phase];
+  const [label, tone] = phaseText[g.phase] ?? ['Live', 'ok'];
   return (
     <div className="panel stack fadeup" style={{ padding: 0, overflow: 'hidden', animationDelay: `${i * 40}ms` }}>
       <div style={{ position: 'relative', padding: '18px 18px 16px', background: `linear-gradient(135deg, ${c1}, ${c2})`, minHeight: 120 }}>
