@@ -38,17 +38,17 @@ function Dashboard({ s, emit, serverNow, connected, socket }: { s: AdminState; e
   const needsCheck = s.songs.filter((x) => x.needsCheck && !x.used).length;
 
   return (
-    <div style={{ maxWidth: 1280, margin: '0 auto', padding: 20 }}>
+    <div className="admin-page" style={{ maxWidth: 1280, margin: '0 auto', padding: 20 }}>
       <Offline connected={connected} />
       <div className="row wrap" style={{ justifyContent: 'space-between', marginBottom: 16 }}>
-        <div className="row" style={{ gap: 14 }}>
-          <Link to="/host" className="btn small ghost">← My games</Link>
+        <div className="row" style={{ gap: 14, minWidth: 0 }}>
+          <Link to="/host" className="btn small ghost" style={{ flex: 'none' }}>← My games</Link>
           <div>
             <div style={{ fontWeight: 800, fontSize: 20 }}>{s.game.name}</div>
             <div className="muted" style={{ fontSize: 13 }}>Game code <b style={{ color: 'var(--yellow)', letterSpacing: '0.1em' }}>{s.game.code}</b> · players join at {window.location.host}/join/{s.game.code}</div>
           </div>
         </div>
-        <div className="row">
+        <div className="row wrap">
           {(['game', 'songs', 'teams', 'settings'] as Tab[]).map((t) => (
             <button key={t} className={`btn small ${tab === t ? '' : 'secondary'}`} onClick={() => setTab(t)}>
               {t === 'game' ? 'Game' : t === 'songs' ? `Songs (${s.songs.length})${needsCheck ? ' ⚠' : ''}` : t === 'teams' ? `Teams (${s.teams.length})` : 'Settings'}
@@ -141,7 +141,7 @@ function Control({ s, act, serverNow, show, visible }: { s: AdminState; act: Act
   const nextLabel = s.pendingBonus.length ? '⭐ Start bonus song' : ['intro', 'stageIntro'].includes(s.phase) ? `▶ Load first song of ${s.stage.name}` : '▶ Load next song';
 
   return (
-    <div style={{ display: visible ? 'grid' : 'none', gridTemplateColumns: '380px 1fr', gap: 20, alignItems: 'start' }}>
+    <div className="rgrid" style={{ display: visible ? 'grid' : 'none', gridTemplateColumns: '380px 1fr', gap: 20, alignItems: 'start' }}>
       <div className="stack" style={{ position: 'sticky', top: 20 }}>
         <div className="panel stack">
           <div className="muted" style={{ fontSize: 13, fontWeight: 700 }}>{s.stage.name.toUpperCase()} · ROUND {s.stage.index + 1} OF {s.stage.count}</div>
@@ -337,7 +337,7 @@ function JudgeTable({ s, act }: { s: AdminState; act: (t: string, e?: Record<str
         {secret && <div className="muted">🙈 Blind mode: answers and the correct song show at the reveal</div>}
         {song && !secret && <div className="muted">Correct: <b style={{ color: '#fff' }}>{song.artist}</b> – <b style={{ color: '#fff' }}>{song.title}</b> ({song.year})</div>}
       </div>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <div className="table-scroll"><table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr className="muted" style={{ fontSize: 12, textAlign: 'left' }}>
             <th style={{ padding: 6 }}>Team</th>
@@ -384,7 +384,7 @@ function JudgeTable({ s, act }: { s: AdminState; act: (t: string, e?: Record<str
             );
           })}
         </tbody>
-      </table>
+      </table></div>
     </div>
   );
 }
@@ -448,7 +448,7 @@ function Songs({ s, act, socket, show }: { s: AdminState; act: Act; socket: Reac
   return (
     <div className="stack">
     <BlindSetup s={s} act={act} socket={socket} show={show} />
-    <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 20, alignItems: 'start' }}>
+    <div className="rgrid" style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 20, alignItems: 'start' }}>
       <div className="panel stack" style={{ gap: 6, position: 'sticky', top: 20 }}>
         <div className="muted" style={{ fontSize: 13, fontWeight: 700 }}>SONG LISTS</div>
         {tabs.map((t) => (
@@ -469,7 +469,7 @@ function Songs({ s, act, socket, show }: { s: AdminState; act: Act; socket: Reac
         {list === BONUS_LIST && <div className="panel muted">⭐ Bonus songs are played only when teams tie: they guess the exact year, closest wins. Add a few (3 to 5).</div>}
         {isMusic && <div className="panel muted">🎵 These songs play on the scoreboard and winner screens, starting at the second you choose (e.g. the chorus). They rotate one per scoreboard.</div>}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+        <div className="rgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
           <div className="panel stack">
             <div style={{ fontWeight: 800 }}>Add from Spotify</div>
             <div className="muted" style={{ fontSize: 14 }}>
@@ -548,11 +548,11 @@ function Songs({ s, act, socket, show }: { s: AdminState; act: Act; socket: Reac
               ))}
             </div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div className="table-scroll"><table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <tbody>
                 {songs.map((x, i) => <SongRow key={x.id} song={x} act={act} index={i} s={s} />)}
               </tbody>
-            </table>
+            </table></div>
           )}
           {!songs.length && <div className="muted" style={{ padding: 20, textAlign: 'center' }}>No songs in this list yet.</div>}
         </div>
@@ -669,7 +669,7 @@ function StageSettings({ stage, index, total, act, played, songs, needed }: { st
           <button className="btn small danger" disabled={total === 1} onClick={() => confirm(`Delete "${stage.name}" and its ${songs} songs?`) && act('removeStage', { stageId: stage.id })}>Delete round</button>
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr', gap: 16, alignItems: 'end' }}>
+      <div className="rgrid" style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 1fr', gap: 16, alignItems: 'end' }}>
         <label className="field">
           Name (shown on the big screen)
           <input className="input" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} onBlur={() => name.trim() && name !== stage.name && act('updateStage', { stageId: stage.id, patch: { name } })} />
@@ -778,14 +778,14 @@ function Teams({ s, act }: { s: AdminState; act: Act }) {
       <div className="muted" style={{ fontSize: 13, marginBottom: 10 }}>
         Own start years: leave empty to use the round's start years. One year or two separated by a comma, e.g. “1987, 2004”. Points can be corrected by hand.
       </div>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <div className="table-scroll"><table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr className="muted" style={{ fontSize: 12, textAlign: 'left' }}>
             <th></th><th>Name</th><th>Own start years</th><th>Points</th><th>Timeline</th><th></th><th></th>
           </tr>
         </thead>
         <tbody>{s.teams.map((t) => <TeamRow key={t.id} t={t} s={s} act={act} />)}</tbody>
-      </table>
+      </table></div>
     </div>
   );
 }
@@ -837,7 +837,7 @@ function SettingsTab({ s, act }: { s: AdminState; act: Act }) {
     </label>
   );
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'start' }}>
+    <div className="rgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'start' }}>
       <form className="panel stack" onSubmit={async (e) => { e.preventDefault(); const r = await act('settings', { patch: changes() }); if (r.ok) Object.assign(base, v); }}>
         <b>Game settings</b>
         {field('roundSeconds', 'Seconds per song', 'How long teams can answer. The song starts at the beginning and keeps playing through the answers and the reveal.')}

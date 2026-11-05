@@ -63,6 +63,9 @@ export interface GiftCardProps {
   style?: CSSProperties;
 }
 
+/** 1% of the card width in px: card text scales with the card, also on older TV browsers without container units. */
+const cq = (width: number | string): CSSProperties => (typeof width === 'number' ? ({ ['--cq' as any]: `${width / 100}px` } as CSSProperties) : {});
+
 /** A gift-card shaped tile: credit card ratio, ribbon, bow and a small wordmark. */
 export function GiftCard({ year, start, mystery, cover, caption, width, color, glow, dashed, className, style }: GiftCardProps) {
   if (dashed) return <div className={`gc gc-empty ${className ?? ''}`} style={{ width, ...style }} />;
@@ -70,7 +73,7 @@ export function GiftCard({ year, start, mystery, cover, caption, width, color, g
   return (
     <div
       className={`gc${start ? ' gc-start' : ''}${glow ? ' gc-glow' : ''} ${className ?? ''}`}
-      style={{ width, background: `linear-gradient(135deg, ${c1}, ${c2})`, ...style }}
+      style={{ width, ...cq(width), background: `linear-gradient(135deg, ${c1}, ${c2})`, ...style }}
     >
       <div className="gc-ribbon-v" />
       <div className="gc-ribbon-h" />
@@ -89,7 +92,7 @@ export function TeamCard({ team, width, rank, highlight }: { team: Pick<TeamPubl
   const url = photoUrl(team.id, team.photoVersion);
   const [c1, c2] = paletteAt([...team.id].reduce((a, c) => a + c.charCodeAt(0), 0));
   return (
-    <div className={`gc gc-team${highlight ? ' gc-glow' : ''}`} style={{ width, background: `linear-gradient(135deg, ${c1}, ${c2})` }}>
+    <div className={`gc gc-team${highlight ? ' gc-glow' : ''}`} style={{ width, ...cq(width), background: `linear-gradient(135deg, ${c1}, ${c2})` }}>
       {url ? <img className="gc-photo" src={url} alt="" /> : <div className="gc-initial">{team.name.slice(0, 1).toUpperCase()}</div>}
       <div className="gc-team-name">{team.name}</div>
       <div className="gc-mark" style={{ color: '#fff' }}>giftcards<span>.</span></div>

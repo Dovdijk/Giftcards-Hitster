@@ -13,6 +13,7 @@ const Show = lazy(() => import('./pages/Show'));
 const Admin = lazy(() => import('./pages/Admin'));
 const Home = lazy(() => import('./pages/Home'));
 const Host = lazy(() => import('./pages/Host'));
+const Tv = lazy(() => import('./pages/Tv'));
 
 /** Shows a message instead of an empty screen when a page crashes. */
 class Crash extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -52,6 +53,7 @@ createRoot(document.getElementById('root')!).render(
         <Routes>
           <Route path="/join/:code" element={<Play />} />
           <Route path="/show/:code" element={<Show />} />
+          <Route path="/tv" element={<Tv />} />
           <Route path="/host" element={<Host />} />
           <Route path="/host/:gameId" element={<Admin />} />
           <Route path="*" element={<Home />} />

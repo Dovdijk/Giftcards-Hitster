@@ -144,25 +144,25 @@ label.field { display: grid; gap: 6px; font-size: 0.85rem; color: var(--muted); 
 .gc-ribbon-v { position: absolute; top: 0; bottom: 0; left: 72%; width: 8%; background: rgba(255,255,255,0.32); }
 .gc-ribbon-h { position: absolute; left: 0; right: 0; top: 28%; height: 11%; background: rgba(255,255,255,0.32); }
 .gc-bow { position: absolute; left: 66%; top: 19%; width: 20%; }
-.gc-mark { position: absolute; left: 7%; top: 7%; font-size: 9cqw; font-weight: 700; letter-spacing: -0.03em; opacity: 0.9; }
+.gc-mark { position: absolute; left: 7%; top: 7%; font-size: calc(9 * var(--cq, 1cqw)); font-weight: 700; letter-spacing: -0.03em; opacity: 0.9; }
 .gc-mark span { color: var(--navy); }
-.gc-year { position: absolute; left: 7%; bottom: 5%; font-size: 27cqw; font-weight: 800; letter-spacing: -0.04em; line-height: 1; text-shadow: 0 2px 8px rgba(0,0,0,0.18); }
-.gc-caption { position: absolute; left: 7%; right: 7%; bottom: 33%; font-size: 7cqw; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gc-year { position: absolute; left: 7%; bottom: 5%; font-size: calc(27 * var(--cq, 1cqw)); font-weight: 800; letter-spacing: -0.04em; line-height: 1; text-shadow: 0 2px 8px rgba(0,0,0,0.18); }
+.gc-caption { position: absolute; left: 7%; right: 7%; bottom: 33%; font-size: calc(7 * var(--cq, 1cqw)); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gc-cover { position: absolute; right: 6%; bottom: 8%; width: 30%; aspect-ratio: 1; border-radius: 10%; object-fit: cover; box-shadow: 0 4px 12px rgba(0,0,0,0.35); }
 .gc-start { color: var(--navy); }
 .gc-start .gc-ribbon-v, .gc-start .gc-ribbon-h { background: rgba(255,106,77,0.75); }
 .gc-start .gc-bow ellipse, .gc-start .gc-bow path { fill: #ff6a4d; stroke: #ff6a4d; }
 .gc-start .gc-bow circle { fill: #ff8a5c; }
 .gc-start .gc-mark span { color: var(--pink); }
-.gc-tag { position: absolute; right: 6%; bottom: 7%; font-size: 7cqw; font-weight: 800; background: var(--navy); color: #fff; padding: 1.5cqw 3cqw; border-radius: 3cqw; letter-spacing: 0.05em; }
+.gc-tag { position: absolute; right: 6%; bottom: 7%; font-size: calc(7 * var(--cq, 1cqw)); font-weight: 800; background: var(--navy); color: #fff; padding: calc(1.5 * var(--cq, 1cqw)) calc(3 * var(--cq, 1cqw)); border-radius: calc(3 * var(--cq, 1cqw)); letter-spacing: 0.05em; }
 .gc-glow { box-shadow: 0 0 0 3px #fff, 0 0 30px 6px rgba(255,214,107,0.7); }
 .gc-empty { background: transparent; border: 2px dashed rgba(255,255,255,0.22); box-shadow: none; }
 .gc-empty::after { display: none; }
 .gc-team .gc-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.gc-team .gc-initial { position: absolute; inset: 0; display: grid; place-items: center; font-size: 34cqw; font-weight: 800; color: rgba(255,255,255,0.9); }
-.gc-team-name { position: absolute; left: 0; right: 0; bottom: 0; padding: 14cqw 6% 5%; font-size: 9cqw; font-weight: 800; background: linear-gradient(transparent, rgba(0,7,73,0.85)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gc-team .gc-initial { position: absolute; inset: 0; display: grid; place-items: center; font-size: calc(34 * var(--cq, 1cqw)); font-weight: 800; color: rgba(255,255,255,0.9); }
+.gc-team-name { position: absolute; left: 0; right: 0; bottom: 0; padding: calc(14 * var(--cq, 1cqw)) 6% 5%; font-size: calc(9 * var(--cq, 1cqw)); font-weight: 800; background: linear-gradient(transparent, rgba(0,7,73,0.85)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gc-team .gc-mark { text-shadow: 0 1px 4px rgba(0,0,0,0.5); }
-.gc-rank { position: absolute; right: 5%; top: 6%; background: var(--yellow); color: var(--navy); font-weight: 800; font-size: 9cqw; padding: 1cqw 4cqw; border-radius: 99px; }
+.gc-rank { position: absolute; right: 5%; top: 6%; background: var(--yellow); color: var(--navy); font-weight: 800; font-size: calc(9 * var(--cq, 1cqw)); padding: calc(1 * var(--cq, 1cqw)) calc(4 * var(--cq, 1cqw)); border-radius: 99px; }
 
 /* ---------- vertical timeline (phone) ---------- */
 .tl { position: relative; display: grid; gap: 10px; padding-left: 26px; }
@@ -176,7 +176,7 @@ label.field { display: grid; gap: 6px; font-size: 0.85rem; color: var(--muted); 
 .tl-slot::before { content: '+'; position: absolute; left: -31px; width: 20px; height: 20px; border-radius: 50%; background: var(--navy-3); border: 2px solid rgba(255,255,255,0.5); display: grid; place-items: center; font-weight: 800; color: #fff; line-height: 1; }
 .tl-slot.big { height: 48px; }
 .tl-slot.over { border-color: var(--mint); background: rgba(62,224,161,0.14); color: var(--mint); }
-.gc-start .gc-year { font-size: 22cqw; }
+.gc-start .gc-year { font-size: calc(22 * var(--cq, 1cqw)); }
 
 /* ---------- animations ---------- */
 @keyframes shake { 0%,100% { transform: translateX(0); } 20% { transform: translateX(-10px) rotate(-1deg); } 40% { transform: translateX(9px) rotate(1deg); } 60% { transform: translateX(-6px); } 80% { transform: translateX(4px); } }
@@ -259,3 +259,14 @@ label.field { display: grid; gap: 6px; font-size: 0.85rem; color: var(--muted); 
 }
 @keyframes gainPop { from { transform: translateY(12px) scale(0.4); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .round-chip, .gain-pop { animation: none !important; } }
+
+/* host panel on a phone: one column */
+@media (max-width: 760px) {
+  .rgrid { grid-template-columns: minmax(0, 1fr) !important; }
+  .rgrid > * { min-width: 0; }
+  .admin-page { padding: 12px !important; overflow-wrap: anywhere; }
+  .admin-page .row { flex-wrap: wrap; }
+  .admin-page .input { min-width: 0; max-width: 100%; }
+  .admin-page .panel, .admin-page .stack > * { min-width: 0; max-width: 100%; }
+}
+.table-scroll { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
