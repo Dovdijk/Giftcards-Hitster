@@ -57,6 +57,11 @@ export default function Play() {
 
   const s = g.state;
   const wide = useWide();
+  // link from the host ("continue on another device"): /join/CODE?team=K7M4QX
+  const [linkTeamCode] = useState(() => new URLSearchParams(window.location.search).get('team')?.toUpperCase() ?? '');
+  const dropTeamParam = () => {
+    try { window.history.replaceState(null, '', window.location.pathname); } catch { /* ignore */ }
+  };
   if (g.authError)
     return (
       <div className="center stack" style={{ height: '100%', padding: 24 }}>
@@ -73,11 +78,20 @@ export default function Play() {
     body = (
       <JoinForm
         full={!s.settings.joinOpen}
+        initialTeamCode={linkTeamCode}
         onJoin={async (name) => {
           const r = await g.emit<{ token: string }>('join', name);
           if (!r.ok) return show(r.error);
           writeToken(code, r.result.token);
           setToken(r.result.token);
+        }}
+        onClaim={async (teamCode) => {
+          const r = await g.emit<{ token: string }>('claimTeam', teamCode);
+          if (!r.ok) return show(r.error);
+          writeToken(code, r.result.token);
+          setToken(r.result.token);
+          dropTeamParam();
+          show('Welcome back! You continue where you left off.');
         }}
       />
     );
@@ -101,9 +115,57 @@ export default function Play() {
   );
 }
 
-function JoinForm({ onJoin, full }: { onJoin: (name: string) => void; full: boolean }) {
+function JoinForm({ onJoin, onClaim, full, initialTeamCode }: { onJoin: (name: string) => void; onClaim: (teamCode: string) => Promise<void> | void; full: boolean; initialTeamCode: string }) {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [teamCode, setTeamCode] = useState(initialTeamCode);
+  const [claimOpen, setClaimOpen] = useState(!!initialTeamCode);
+  const tried = useRef(false);
+  const claim = async (c: string) => {
+    setBusy(true);
+    await onClaim(c);
+    setBusy(false);
+  };
+  // opened from the host's link: take over the team right away
+  useEffect(() => {
+    if (initialTeamCode && !tried.current) {
+      tried.current = true;
+      claim(initialTeamCode);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const clean = teamCode.replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 6);
+  const claimBox = (
+    <div className="panel stack" style={{ gap: 10, marginTop: 6 }}>
+      {claimOpen ? (
+        <form
+          className="stack"
+          style={{ gap: 10 }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (clean.length === 6) claim(clean);
+          }}
+        >
+          <b>Continue with your team</b>
+          <span className="muted" style={{ fontSize: 14 }}>Lost your device or closed the window? Ask the host for your team code.</span>
+          <input
+            className="input"
+            value={clean.length > 3 ? `${clean.slice(0, 3)}-${clean.slice(3)}` : clean}
+            onChange={(e) => setTeamCode(e.target.value)}
+            placeholder="K7M-4QX"
+            autoCapitalize="characters"
+            autoComplete="off"
+            spellCheck={false}
+            aria-label="Team code"
+            style={{ fontSize: 26, fontWeight: 800, letterSpacing: '0.15em', textAlign: 'center' }}
+          />
+          <button className="btn secondary" disabled={busy || clean.length !== 6}>Continue with my team</button>
+        </form>
+      ) : (
+        <button type="button" className="btn ghost small" onClick={() => setClaimOpen(true)}>Already in a team? Enter your team code</button>
+      )}
+    </div>
+  );
   return (
     <div className="stack fadeup" style={{ marginTop: 30 }}>
       <h1 style={{ fontSize: 34, margin: 0, lineHeight: 1.1 }}>
@@ -129,6 +191,7 @@ function JoinForm({ onJoin, full }: { onJoin: (name: string) => void; full: bool
           <button className="btn big" disabled={busy || !name.trim()}>Join the game</button>
         </form>
       )}
+      {claimBox}
     </div>
   );
 }

@@ -272,3 +272,21 @@ test('timeline cards keep the colour number of their song in the round', () => {
   assert.equal(won[0].n, 2);
   g.dispose?.();
 });
+
+test('a team continues on another device with a one-time code', () => {
+  const g = new Game();
+  const t = g.join('Laptop Legends');
+  const oldToken = t.token;
+  const { code } = g.createTransfer(t.id);
+  assert.match(code, /^[A-Z2-9]{6}$/);
+  const moved = g.claimTransfer(`${code.slice(0, 3)}-${code.slice(3).toLowerCase()}`);
+  assert.equal(moved.id, t.id);
+  assert.notEqual(moved.token, oldToken);
+  assert.equal(g.teamByToken(oldToken), null);
+  assert.throws(() => g.claimTransfer(code), /not valid/); // works once
+  const second = g.createTransfer(t.id).code;
+  const third = g.createTransfer(t.id).code; // a new code replaces the old one
+  assert.throws(() => g.claimTransfer(second), /not valid/);
+  assert.equal(g.claimTransfer(third).id, t.id);
+  g.dispose?.();
+});

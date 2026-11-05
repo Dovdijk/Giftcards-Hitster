@@ -220,6 +220,18 @@ async function main() {
     entry.game.setConnected(teamId, n > 0);
   };
 
+  /** Sign out every device of a team (it was removed, or continues on another device). */
+  const signOutTeam = (entry: Entry, teamId: string, except?: Socket) => {
+    for (const s of io.sockets.adapter.rooms.get(`g:${entry.meta.id}:players`) ?? []) {
+      const sock = io.sockets.sockets.get(s);
+      if (sock && sock !== except && sock.data.teamId === teamId) {
+        sock.data.teamId = undefined;
+        markConnected(entry, teamId, -1);
+        sock.emit('tokenInvalid');
+      }
+    }
+  };
+
   io.on('connection', (socket: Socket) => {
     const { role, token, code, gameId } = (socket.handshake.auth ?? {}) as Record<string, string>;
 
@@ -276,6 +288,17 @@ async function main() {
         return { token: t.token, teamId: t.id };
       }),
     );
+    socket.on('claimTeam', (teamCode: string, ack) =>
+      reply(ack, () => {
+        if (socket.data.teamId) throw new GameError('This device already has a team');
+        const t = game.claimTransfer(String(teamCode ?? ''));
+        signOutTeam(entry, t.id, socket);
+        socket.data.teamId = t.id;
+        markConnected(entry, t.id, +1);
+        socket.emit('state', game.playerState(t.id));
+        return { token: t.token, teamId: t.id };
+      }),
+    );
     socket.on('rename', (name: string, ack) =>
       reply(ack, () => {
         if (!socket.data.teamId) throw new GameError('Join first');
@@ -316,16 +339,11 @@ async function main() {
           case 'nextAward': return game.nextAward();
           case 'skipAwards': return game.skipAwards();
           case 'updateTeam': return game.adminUpdateTeam(a.teamId, a.patch ?? {});
+          case 'transferTeam': return game.createTransfer(a.teamId);
           case 'removeTeam': {
             delete entry.photos[a.teamId];
             entry.savePhotos.schedule();
-            for (const s of io.sockets.adapter.rooms.get(`g:${entry.meta.id}:players`) ?? []) {
-              const sock = io.sockets.sockets.get(s);
-              if (sock && sock.data.teamId === a.teamId) {
-                sock.data.teamId = undefined;
-                sock.emit('tokenInvalid');
-              }
-            }
+            signOutTeam(entry, a.teamId);
             playerConnections.delete(`${entry.meta.id}:${a.teamId}`);
             return game.removeTeam(a.teamId);
           }

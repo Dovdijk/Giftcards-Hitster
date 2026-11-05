@@ -5,6 +5,8 @@ import { Avatar, Offline, Ring, Wordmark, useToast } from '../components/common'
 import { Link, useParams } from 'react-router-dom';
 import { SpotifyPlayer, spIframeAllow, spLog, spLogLines, useSpLog, type PlayerHandle, type PlaybackInfo } from '../components/SpotifyPlayer';
 import { Medals } from '../components/giftcard';
+import QRCode from 'qrcode';
+import { createPortal } from 'react-dom';
 
 type Emit = ReturnType<typeof useGameSocket>['emit'];
 
@@ -781,7 +783,7 @@ function Teams({ s, act }: { s: AdminState; act: Act }) {
       <div className="table-scroll"><table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr className="muted" style={{ fontSize: 12, textAlign: 'left' }}>
-            <th></th><th>Name</th><th>Own start years</th><th>Points</th><th>Timeline</th><th></th><th></th>
+            <th></th><th>Name</th><th>Own start years</th><th>Points</th><th>Timeline</th><th></th><th></th><th></th>
           </tr>
         </thead>
         <tbody>{s.teams.map((t) => <TeamRow key={t.id} t={t} s={s} act={act} />)}</tbody>
@@ -815,10 +817,71 @@ function TeamRow({ t, s, act }: { t: TeamPublic; s: AdminState; act: Act }) {
       </td>
       <td className="muted" style={{ fontSize: 13 }}>{t.timeline.map((c) => c.year).join(' · ') || '–'}<Medals wins={t.wins} size={18} /></td>
       <td><span className={`pill ${t.connected ? 'ok' : 'bad'}`}>{t.connected ? 'online' : 'offline'}</span></td>
+      <td style={{ width: 170 }}>
+        <TransferButton t={t} s={s} act={act} />
+      </td>
       <td style={{ width: 60 }}>
         <button className="btn small danger" onClick={() => confirm(`Remove team "${t.name}"? Their device will need to join again.`) && act('removeTeam', { teamId: t.id })}>✕</button>
       </td>
     </tr>
+  );
+}
+
+/** "Move to another device": a one-time team code, link and QR the host reads out or sends. */
+function TransferButton({ t, s, act }: { t: TeamPublic; s: AdminState; act: Act }) {
+  const [info, setInfo] = useState<{ code: string; expiresAt: number } | null>(null);
+  const [qr, setQr] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [, tick] = useState(0);
+  const link = info ? `${window.location.origin}/join/${s.game.code}?team=${info.code}` : '';
+  const make = async () => {
+    const r = await act('transferTeam', { teamId: t.id });
+    if (r?.ok) setInfo(r.result);
+  };
+  useEffect(() => {
+    if (!link) return;
+    QRCode.toDataURL(link, { margin: 1, width: 360, color: { dark: '#000749', light: '#ffffff' } }).then(setQr);
+  }, [link]);
+  useEffect(() => {
+    if (!info) return;
+    const i = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(i);
+  }, [info]);
+  const left = info ? Math.max(0, Math.ceil((info.expiresAt - Date.now()) / 1000)) : 0;
+  const pretty = info ? `${info.code.slice(0, 3)}-${info.code.slice(3)}` : '';
+  return (
+    <>
+      <button className="btn small secondary" onClick={make} title="The team continues on another laptop or phone">Move to other device</button>
+      {info &&
+        createPortal(
+          <div onClick={() => setInfo(null)} style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,4,40,0.75)', display: 'grid', placeItems: 'center', padding: 16 }}>
+            <div className="panel stack pop" onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, gap: 14, textAlign: 'center', background: 'var(--navy-2)' }}>
+              <div className="row" style={{ justifyContent: 'center', gap: 12 }}>
+                <Avatar team={t} size={48} />
+                <b style={{ fontSize: 20 }}>{t.name}</b>
+              </div>
+              <div className="muted" style={{ fontSize: 14 }}>On the new device: open the game, then <b>Already in a team? Enter your team code</b>.</div>
+              <div style={{ fontSize: 52, fontWeight: 800, letterSpacing: '0.12em', color: 'var(--yellow)', lineHeight: 1 }}>{left > 0 ? pretty : '––––––'}</div>
+              <div className="muted" style={{ fontSize: 13 }}>
+                {left > 0 ? `Works once · expires in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : 'This code has expired.'}
+              </div>
+              {left > 0 && qr && <img src={qr} alt="QR code" style={{ width: 180, height: 180, margin: '0 auto', borderRadius: 14, background: '#fff', padding: 8 }} />}
+              {left > 0 && (
+                <div className="stack" style={{ gap: 6 }}>
+                  <input className="input" readOnly value={link} onFocus={(e) => e.currentTarget.select()} style={{ fontSize: 13 }} />
+                  <button className="btn small" onClick={() => navigator.clipboard?.writeText(link).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); })}>{copied ? 'Link copied ✓' : 'Copy link'}</button>
+                </div>
+              )}
+              <div className="muted" style={{ fontSize: 12 }}>The old device is signed out as soon as the code is used.</div>
+              <div className="row" style={{ justifyContent: 'center', gap: 10 }}>
+                <button className="btn small secondary" onClick={make}>New code</button>
+                <button className="btn small ghost" onClick={() => setInfo(null)}>Close</button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 

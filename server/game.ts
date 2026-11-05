@@ -217,6 +217,39 @@ export class Game extends EventEmitter {
   team(teamId: string) {
     return this.data.teams.find((t) => t.id === teamId) ?? null;
   }
+  // one-time codes to continue a team on another device (kept in memory only)
+  private transfers = new Map<string, { teamId: string; expires: number }>();
+
+  /** Host asks for a code so a team can continue on another device. Valid once, for 10 minutes. */
+  createTransfer(teamId: string) {
+    if (!this.team(teamId)) throw new GameError('Unknown team');
+    for (const [c, v] of this.transfers) if (v.teamId === teamId || v.expires < Date.now()) this.transfers.delete(c);
+    const abc = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O, 1/I/L
+    let code = '';
+    do {
+      code = Array.from(crypto.randomBytes(6), (b) => abc[b % abc.length]).join('');
+    } while (this.transfers.has(code));
+    const expiresAt = Date.now() + 10 * 60_000;
+    this.transfers.set(code, { teamId, expires: expiresAt });
+    return { code, expiresAt };
+  }
+
+  /** A new device takes over a team: the old device's token stops working. */
+  claimTransfer(raw: string): Team {
+    const code = String(raw ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const entry = this.transfers.get(code);
+    if (!entry || entry.expires < Date.now()) {
+      if (entry) this.transfers.delete(code);
+      throw new GameError('This team code is not valid (anymore). Ask the host for a new one.');
+    }
+    this.transfers.delete(code);
+    const team = this.team(entry.teamId);
+    if (!team) throw new GameError('This team no longer exists. Ask the host.');
+    team.token = crypto.randomBytes(18).toString('base64url');
+    this.changed();
+    return team;
+  }
+
   teamByToken(token: string | undefined) {
     if (!token) return null;
     return this.data.teams.find((t) => t.token === token) ?? null;
