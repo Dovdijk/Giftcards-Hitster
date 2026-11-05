@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import type { GameSummary } from '../../../shared/types';
 import { api } from '../socket';
 import { Wordmark, useToast } from '../components/common';
-import { Shapes, colorAt } from '../components/giftcard';
+import { Shapes, paletteAt } from '../components/giftcard';
 
 interface Me {
   id: string;
@@ -161,7 +161,7 @@ function Games({ me, onLogout }: { me: Me; onLogout: () => void }) {
 }
 
 function GameCard({ g, i, mine, run }: { g: Summary; i: number; mine: boolean; run: (fn: () => Promise<unknown>, ok?: string) => void }) {
-  const [c1, c2] = colorAt(i);
+  const [c1, c2] = paletteAt(i);
   const [label, tone] = phaseText[g.phase] ?? ['Live', 'ok'];
   return (
     <div className="panel stack fadeup" style={{ padding: 0, overflow: 'hidden', animationDelay: `${i * 40}ms` }}>

@@ -272,7 +272,7 @@ function Reveal({ s }: { s: PublicState }) {
         <div className="flip" style={{ position: 'relative', transform: 'rotate(-4deg)', flex: 'none' }}>
           <div className="flip-inner">
             <div className="face back"><GiftCard mystery width={410} style={{ fontSize: 22 }} /></div>
-            <div className="face"><GiftCard year={song.year} cover={song.coverUrl} color={4} width={410} style={{ fontSize: 22 }} /></div>
+            <div className="face"><GiftCard year={song.year} cover={song.coverUrl} color={s.round!.index - 1} width={410} style={{ fontSize: 22 }} /></div>
           </div>
           <Sparkles radius={300} />
         </div>

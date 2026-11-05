@@ -595,7 +595,7 @@ function MyResult({ state }: { state: PlayerState }) {
     <div className={`panel stack ${r.kind === 'normal' && !good ? 'anim-shake' : 'fadeup'}`}>
       {good && <Burst />}
       <div className="row">
-        <GiftCard year={song.year} cover={song.coverUrl} width={130} className="pop" />
+        <GiftCard year={song.year} cover={song.coverUrl} color={r.index - 1} width={130} className="pop" />
         <div>
           <div style={{ fontWeight: 800, fontSize: 30 }}>{song.year}</div>
           <div style={{ fontWeight: 700 }}>{song.title}</div>

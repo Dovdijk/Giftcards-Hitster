@@ -57,6 +57,7 @@ export interface TimelineCard {
   title: string | null;
   artist: string | null;
   coverUrl: string | null;
+  n?: number; // song number in its round: decides the card's colour (start cards have none)
 }
 
 export interface Answer {

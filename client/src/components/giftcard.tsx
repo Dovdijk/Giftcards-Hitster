@@ -15,12 +15,27 @@ export const CARD_COLORS: [string, string][] = [
   ['#ffb86b', '#f97316'], // orange
   ['#c9b8ff', '#8a6cff'], // lavender
 ];
-export const colorAt = (i: number): [string, string] => CARD_COLORS[((i % CARD_COLORS.length) + CARD_COLORS.length) % CARD_COLORS.length];
+/**
+ * Colour for song number i (0-based). The first 10 come from the brand palette; after that each
+ * song gets its own hue (golden-angle steps), so no two songs in a round share a colour.
+ */
+export const colorAt = (i: number): [string, string] => {
+  if (i >= 0 && i < CARD_COLORS.length) return CARD_COLORS[i];
+  if (i < 0) return CARD_COLORS[((i % CARD_COLORS.length) + CARD_COLORS.length) % CARD_COLORS.length];
+  const h = Math.round((i * 137.508 + 20) % 360);
+  return [`hsl(${h} 85% 72%)`, `hsl(${(h + 25) % 360} 75% 48%)`];
+};
 
-/** Position of each song card among the song cards of a timeline (start cards get -1). */
-export function songCardIndexes(timeline: { songId: string | null }[]) {
-  let n = 0;
-  return timeline.map((c) => (c.songId === null ? -1 : n++));
+/** Brand colour by position, repeating (decoration, team cards). */
+export const paletteAt = (i: number): [string, string] => CARD_COLORS[((i % CARD_COLORS.length) + CARD_COLORS.length) % CARD_COLORS.length];
+
+/**
+ * Colour index of each card in a timeline: every song keeps the colour of its number in the
+ * round, wherever it lands. Start cards get -1 (they are white).
+ */
+export function songCardIndexes(timeline: { songId: string | null; n?: number }[]) {
+  let pos = 0;
+  return timeline.map((c) => (c.songId === null ? -1 : c.n ? c.n - 1 : pos++));
 }
 
 function Bow() {
@@ -72,7 +87,7 @@ export function GiftCard({ year, start, mystery, cover, caption, width, color, g
 /** Team photo as a personal gift card. */
 export function TeamCard({ team, width, rank, highlight }: { team: Pick<TeamPublic, 'id' | 'name' | 'photoVersion'>; width: number; rank?: number; highlight?: boolean }) {
   const url = photoUrl(team.id, team.photoVersion);
-  const [c1, c2] = colorAt([...team.id].reduce((a, c) => a + c.charCodeAt(0), 0));
+  const [c1, c2] = paletteAt([...team.id].reduce((a, c) => a + c.charCodeAt(0), 0));
   return (
     <div className={`gc gc-team${highlight ? ' gc-glow' : ''}`} style={{ width, background: `linear-gradient(135deg, ${c1}, ${c2})` }}>
       {url ? <img className="gc-photo" src={url} alt="" /> : <div className="gc-initial">{team.name.slice(0, 1).toUpperCase()}</div>}

@@ -87,6 +87,13 @@ function migrate(raw: any): GameData {
   }));
   for (const t of d.teams) delete (t as any).startYear;
   d.rounds = (d.rounds ?? []).map((r: any) => ({ stage: 0, speedWinnerId: null, speedMs: null, ...r }));
+  // older timelines: give each song card the number of the song in its round (its colour)
+  for (const t of d.teams)
+    for (const c of t.timeline ?? [])
+      if (c.songId && c.n === undefined) {
+        const r = [...d.rounds].reverse().find((x: any) => x.songId === c.songId && !x.practice);
+        if (r) c.n = r.index;
+      }
   d.musicCursor ??= 0;
   d.awards ??= null;
   d.awardIndex ??= 0;
@@ -852,7 +859,7 @@ export class Game extends EventEmitter {
       t.points += pts;
       t.stagePoints += pts;
       if (r.kind === 'normal' && r.placementCorrect[p] && song.year !== null) {
-        t.timeline.push({ year: song.year, songId: song.id, title: song.title, artist: song.artist, coverUrl: song.coverUrl });
+        t.timeline.push({ year: song.year, songId: song.id, title: song.title, artist: song.artist, coverUrl: song.coverUrl, n: r.index });
         t.timeline.sort((a, b) => a.year - b.year);
       }
     }

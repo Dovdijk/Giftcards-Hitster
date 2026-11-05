@@ -256,3 +256,19 @@ test('song ends when all online teams locked in; autopilot judges and moves on',
   assert.equal((g as any).autoAt, null);
   g.dispose();
 });
+
+test('timeline cards keep the colour number of their song in the round', () => {
+  const g = new Game();
+  const s = mk(g.data.stages[0].id);
+  g.addSongs([s('One', 1990), s('Two', 1960), s('Three', 2000)]);
+  const t = g.join('T');
+  g.startShow();
+  const startYear = g.data.teams[0].timeline[0].year;
+  play(g, { [t.id]: { position: 1990 > startYear ? 0 : 1, yearGuess: null, artist: '', title: '' } }); // song 1: wrong spot
+  play(g, { [t.id]: { position: 1960 < startYear ? 0 : 1, yearGuess: null, artist: '', title: '' } }); // song 2: right spot
+  const won = g.data.teams[0].timeline.filter((c) => c.songId !== null);
+  assert.equal(won.length, 1);
+  assert.equal(won[0].title, 'Two');
+  assert.equal(won[0].n, 2);
+  g.dispose?.();
+});
